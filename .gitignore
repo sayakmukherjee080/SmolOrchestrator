@@ -1,0 +1,5 @@
+.vscode/settings.json
+storage/app.db
+/storage
+dev/err.log
+*.log

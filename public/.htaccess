@@ -1,0 +1,15 @@
+# Rewrite all requests to index.php (except existing files/directories)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Handle Authorization header (some hosts strip it)
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    
+    # Don't rewrite if file or directory exists
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    
+    # Rewrite all other requests to index.php
+    RewriteRule ^ index.php [L]
+</IfModule>

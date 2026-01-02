@@ -1,0 +1,237 @@
+/* public/css/style.css */
+
+:root {
+  --scan-color: rgba(16, 185, 129, 0.05);
+}
+
+body {
+  font-family: 'JetBrains Mono', monospace;
+  background-color: #020617 !important;
+  background-image:
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03)); /* Reduced intensity */
+  background-size: 100% 2px, 3px 100%;
+  color: #10b981;
+  font-size: 14px; /* Explicit base size */
+  line-height: 1.5; /* Proper line height */
+  /* Default access terminal green */
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #020617;
+  border-left: 1px solid rgba(16, 185, 129, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Cyberpunk Elements */
+.glass {
+  background: rgba(2, 6, 23, 0.9);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  position: relative;
+}
+
+/* Corner Accents */
+.cyber-corner::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid #10b981;
+  border-left: 2px solid #10b981;
+}
+
+.cyber-corner::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-bottom: 2px solid #10b981;
+  border-right: 2px solid #10b981;
+}
+
+/* Tech Border (Dashed) */
+.tech-border-b {
+  background-image: linear-gradient(to right, #10b981 50%, transparent 50%);
+  background-position: bottom;
+  background-size: 8px 1px;
+  background-repeat: repeat-x;
+}
+
+/* Block Progress Bar */
+.progress-blocks {
+  background-image: linear-gradient(90deg, transparent 50%, rgba(0, 0, 0, 0.8) 50%);
+  background-size: 4px 100%;
+}
+
+.text-glow {
+  text-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+}
+
+.border-glow {
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
+/* GLOBAL FORM STYLES */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="email"],
+select,
+textarea {
+  appearance: none;
+  background-color: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #10b981;
+  border-radius: 2px;
+  font-family: 'JetBrains Mono', monospace;
+  transition: all 0.2s;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
+/* Custom Select Arrow */
+select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2310b981' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem;
+}
+
+/* Glitch Hover */
+.glitch-hover:hover {
+  animation: glitch-skew 2s infinite;
+}
+
+@keyframes glitch-skew {
+
+  0%,
+  100% {
+    transform: skew(0deg);
+    color: #94a3b8;
+  }
+
+  5% {
+    transform: skew(-20deg);
+    color: #10b981;
+  }
+
+  10% {
+    transform: skew(20deg);
+    color: #10b981;
+  }
+
+  15% {
+    transform: skew(0deg);
+    color: #94a3b8;
+  }
+}
+
+/* FAST SKEW & COLOR CHANGE */
+.menu-item-skew {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+
+.menu-item-skew:hover {
+  transform: skewX(-12deg) translateX(10px);
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #10b981 !important;
+  text-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.menu-item-skew:hover span {
+  transform: skewX(12deg);
+  /* Counter-skew text */
+  display: inline-block;
+}
+
+.menu-item-active {
+  transform: skewX(-12deg) translateX(5px);
+  background: rgba(16, 185, 129, 0.15) !important;
+  border: 1px solid rgba(16, 185, 129, 0.6) !important;
+  color: #10b981 !important;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+}
+
+.menu-item-active span {
+  transform: skewX(12deg);
+  display: inline-block;
+}
+
+/* TERMINAL BOXES */
+.terminal-box {
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5),
+    4px 4px 0 rgba(16, 185, 129, 0.1);
+}
+
+/* GRID OVERLAY (SUBTLE) */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* User Requested Glitch Effect */
+@keyframes glitch-skew-loop {
+  0% {
+    transform: skew(0deg);
+    color: #94a3b8;
+  }
+
+  2% {
+    transform: skew(-20deg);
+    color: #10b981;
+  }
+
+  4% {
+    transform: skew(20deg);
+    color: #f43f5e;
+  }
+
+  6% {
+    transform: skew(0deg);
+    color: #10b981;
+  }
+
+  100% {
+    transform: skew(0deg);
+    color: #94a3b8;
+  }
+
+  /* Rest of loop is idle */
+}
+
+/* Loop interval managed by duration (e.g. 2s) */
+.glitch-hover:hover span {
+  animation: glitch-skew-loop 2s infinite;
+  display: inline-block;
+  /* Required for transform */
+}
