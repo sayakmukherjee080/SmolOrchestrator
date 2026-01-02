@@ -65,15 +65,75 @@ class Cache {
         return (bool)file_put_contents($file, $content, LOCK_EX);
     }
 
+    public function exists(string $key): bool {
+        if (!$this->enabled) return false;
+        
+        if ($this->driver === 'apcu' && function_exists('apcu_exists')) {
+            return apcu_exists($key);
+        }
+        
+        // File fallback - check existence AND expiry
+        $file = $this->getFilePath($key);
+        if (!file_exists($file)) return false;
+        
+        $content = @file_get_contents($file);
+        if ($content === false) return false;
+        
+        $data = json_decode($content, true);
+        if (!is_array($data) || !isset($data['expires'])) return false;
+        
+        return $data['expires'] > time();
+    }
+    
+    /**
+     * Atomically set value if key does not exist.
+     * Returns true if set, false if already exists.
+     */
+    public function add(string $key, $value, int $ttl = 300): bool {
+        if (!$this->enabled) return false;
+        
+        if ($this->driver === 'apcu' && function_exists('apcu_add')) {
+            return apcu_add($key, $value, $ttl);
+        }
+        
+        // File fallback with atomic creation
+        $file = $this->getFilePath($key);
+        // Use 'x' mode (create and open for write only, returns false if file exists)
+        $fp = @fopen($file, 'x'); 
+        if (!$fp) return false;
+        
+        if (!flock($fp, LOCK_EX)) {
+            fclose($fp);
+            return false;
+        }
+        
+        $data = [
+            'expires' => time() + $ttl,
+            'val' => $value
+        ];
+        fwrite($fp, json_encode($data, JSON_UNESCAPED_SLASHES));
+        
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        
+        return true;
+    }
+
     public function increment(string $key, int $step = 1, int $ttl = 300): int {
         if (!$this->enabled) return 0;
 
         if ($this->driver === 'apcu' && function_exists('apcu_inc')) {
             $success = false;
-            // apcu_inc creates key if not exists if valid ttl passed? No, apcu_inc needs key. 
-            // Actually apcu_inc(key, step, success, ttl) - TTL only if creating?
-            // "If the key does not exist, it is created." - PHP docs.
-            $val = apcu_inc($key, $step, $success, $ttl);
+            if ($step >= 0) {
+                $val = apcu_inc($key, $step, $success, $ttl);
+            } else {
+                // apcu_dec for negative steps (release reservation)
+                if (function_exists('apcu_dec')) {
+                    $val = apcu_dec($key, -$step, $success, $ttl);
+                } else {
+                    return 0; // Fallback if apcu_dec not available
+                }
+            }
             return $success ? $val : 0;
         }
 

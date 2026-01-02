@@ -616,11 +616,9 @@ class Gateway {
             $endpoint['used'] = 0;
             $this->cache->delete("endpoint:$requestedModel");
         }
-        // check endpoint quota
-        $pendingEp = $this->getPendingUsage('endpoints', (int)$endpoint['id']);
-        if ((int)$endpoint['quota'] > 0 && ((int)$endpoint['used'] + $pendingEp) >= (int)$endpoint['quota']) {
-            respond_json(['error' => 'model quota exceeded'], 429);
-        }
+        // check endpoint quota - REMOVED (Per Provider Logic)
+        // Global cap removed to allow sum of provider quotas
+
 
         // Cache Providers
         $providers = $this->cache->get("providers:{$endpoint['id']}");
@@ -676,18 +674,16 @@ class Gateway {
                 $this->queueDbWrite('endpoint_providers', (int)$p['ep_id'], ['used' => 0, 'reset_at' => $now, 'rate_limit_hits' => 0]);
                 $p['used'] = 0;
                 $p['rate_limit_hits'] = 0;
+                $this->cache->delete("res:ep:" . $p['ep_id']); // Reset reservation counter
             }
             // check cooldown
             if (!empty($p['suspended_until']) && $p['suspended_until'] > $now) {
                 $lastErrors[] = "provider {$p['provider_name']} suspended until " . date('H:i:s', (int)$p['suspended_until']);
                 continue;
             }
-            // check provider quota (quota=0 means unlimited/use endpoint quota)
-            // Fix Async Overshoot: Check DB + Pending Cache
-            $pendingMap = $this->getPendingUsage('endpoint_providers', (int)$p['ep_id']);
-            $totalUsed = (int)$p['used'] + $pendingMap;
-
-            if ((int)$p['quota'] > 0 && $totalUsed >= (int)$p['quota']) {
+            // Atomic quota reservation
+            $effectiveQuota = (int)$p['quota'] > 0 ? (int)$p['quota'] : (int)$endpoint['quota'];
+            if ($effectiveQuota > 0 && !$this->reserveQuotaSlot((int)$p['ep_id'], $effectiveQuota)) {
                 $lastErrors[] = "provider {$p['provider_name']} quota exhausted";
                 continue;
             }
@@ -820,7 +816,12 @@ class Gateway {
                 // increment usage and reset rate limit counter on success
                 $this->incrementUsage('api_keys', (int)$keyRow['id']);
                 $this->incrementUsage('endpoints', (int)$endpoint['id']);
-                $this->incrementUsage('endpoint_providers', (int)$p['ep_id']);
+                // endpoint_providers: In DB mode, reserveQuotaSlot already incremented.
+                // In cache mode, reservation key is separate, so we still need to track for worker sync.
+                if ($this->cache->isEnabled()) {
+                    // Cache mode: reservation key (res:ep:X) is source of truth, worker will sync it
+                    // No additional increment needed here
+                }
                 
                 // Reset rate limit hits immediately if using DB, or let worker handle it?
                 // For simplicity, if using cache, we just don't increment rate_limit_hits.
@@ -883,6 +884,39 @@ class Gateway {
         }
 
 
+    }
+
+    /**
+     * Atomically reserve a quota slot for a provider.
+     * Returns true if slot reserved, false if quota exhausted.
+     */
+    private function reserveQuotaSlot(int $epId, int $effectiveQuota): bool {
+        if ($this->cache->isEnabled()) {
+            $key = "res:ep:$epId";
+            
+            // Seed from DB if key missing (prevents reset to 0)
+            if (!$this->cache->exists($key)) {
+                $stmt = $this->pdo->prepare("SELECT used FROM endpoint_providers WHERE id = ?");
+                $stmt->execute([$epId]);
+                $dbUsed = (int)$stmt->fetchColumn();
+                $this->cache->add($key, $dbUsed, 86400);
+            }
+            
+            // Cache mode: atomic increment
+            $newCount = $this->cache->increment($key, 1, 86400);
+            if ($newCount > $effectiveQuota) {
+                $this->cache->increment($key, -1, 86400); // Release reservation
+                return false;
+            }
+            return true;
+        }
+        
+        // DB mode: atomic UPDATE with condition
+        $stmt = $this->pdo->prepare(
+            "UPDATE endpoint_providers SET used = used + 1 WHERE id = ? AND used < ?"
+        );
+        $stmt->execute([$epId, $effectiveQuota]);
+        return $stmt->rowCount() > 0;
     }
 
     private function getPendingUsage(string $table, int $id): int {

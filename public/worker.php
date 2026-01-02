@@ -101,25 +101,13 @@ if (file_exists($queueFile)) {
 if ($cache->isEnabled()) {
     echo "[Worker] Syncing usage stats...\n";
     
-    // We need to scan keys. 
-    // APCu supports iterator, File cache we can glob.
-    // Since Cache class doesn't expose scan, we'll add a simple way to get keys or just iterate known IDs?
-    // Iterating known IDs is inefficient. 
-    // Let's rely on the fact that we can't easily scan APCu without an iterator.
-    // But for file cache we can glob.
-    // For this implementation, let's assume we can't easily scan APCu keys in a generic way without `apcu_key_info` or similar which might be heavy.
-    // However, we can just iterate over all keys if we had a list.
-    // A better approach for "Buffered Usage" is to maintain a "dirty set" in cache, but that adds complexity.
-    // For now, let's just try to implement a `scan` method in Cache class or just handle File driver here since that's what we likely use locally.
-    // Actually, let's add `scan` to Cache class first? No, let's just do it here for now if possible.
-    
-    // If driver is file, we can glob.
-    $keys = $cache->scan('usage:*');
-    echo "[Worker] Found " . count($keys) . " usage keys.\n";
+    // Sync usage:table:id keys (api_keys, endpoints - these still use old format)
+    $usageKeys = $cache->scan('usage:*');
+    echo "[Worker] Found " . count($usageKeys) . " usage keys.\n";
 
-    if ($keys) {
+    if ($usageKeys) {
         $pdo->beginTransaction();
-        foreach ($keys as $key) {
+        foreach ($usageKeys as $key) {
             // Key format: usage:table:id
             $parts = explode(':', $key);
             if (count($parts) !== 3) continue;
@@ -132,8 +120,7 @@ if ($cache->isEnabled()) {
                 // Update DB with fixed query mapping to prevent SQL injection
                 $updateQueries = [
                     'api_keys' => "UPDATE api_keys SET used = used + ? WHERE id = ?",
-                    'endpoints' => "UPDATE endpoints SET used = used + ? WHERE id = ?",
-                    'endpoint_providers' => "UPDATE endpoint_providers SET used = used + ? WHERE id = ?"
+                    'endpoints' => "UPDATE endpoints SET used = used + ? WHERE id = ?"
                 ];
 
                 if (isset($updateQueries[$table])) {
@@ -145,6 +132,31 @@ if ($cache->isEnabled()) {
         }
         $pdo->commit();
         echo "[Worker] Usage synced.\n";
+    }
+
+    // Sync res:ep:id keys (endpoint_providers reservations - new format)
+    // These are the SOURCE OF TRUTH, so we SET (not increment) and do NOT delete
+    $resKeys = $cache->scan('res:ep:*');
+    echo "[Worker] Found " . count($resKeys) . " reservation keys.\n";
+
+    if ($resKeys) {
+        $pdo->beginTransaction();
+        foreach ($resKeys as $key) {
+            // Key format: res:ep:id
+            $parts = explode(':', $key);
+            if (count($parts) !== 3 || $parts[0] !== 'res' || $parts[1] !== 'ep') continue;
+            
+            $id = (int)$parts[2];
+            $val = (int)$cache->get($key);
+            
+            if ($val > 0) {
+                // SET used to cache value (cache is source of truth)
+                $pdo->prepare("UPDATE endpoint_providers SET used = ? WHERE id = ?")->execute([$val, $id]);
+                // Do NOT delete - reservation key is the live counter
+            }
+        }
+        $pdo->commit();
+        echo "[Worker] Reservations synced.\n";
     }
 }
 

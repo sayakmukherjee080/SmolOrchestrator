@@ -457,7 +457,7 @@ class AdminController {
             FROM endpoint_providers m
             JOIN endpoints e ON m.endpoint_id = e.id
             JOIN providers p ON m.provider_id = p.id
-            ORDER BY e.name, m.priority DESC
+            ORDER BY (m.status = 'active') DESC, e.name, m.priority DESC
         ");
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
