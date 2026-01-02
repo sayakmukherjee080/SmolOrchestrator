@@ -894,12 +894,36 @@ class Gateway {
         if ($this->cache->isEnabled()) {
             $key = "res:ep:$epId";
             
-            // Seed from DB if key missing (prevents reset to 0)
-            if (!$this->cache->exists($key)) {
+            // On first request with cache enabled, check for stale cache values
+            // and persist them to DB if higher than current DB value
+            $cacheExists = $this->cache->exists($key);
+            
+            if (!$cacheExists) {
+                // Fetch current DB value
                 $stmt = $this->pdo->prepare("SELECT used FROM endpoint_providers WHERE id = ?");
                 $stmt->execute([$epId]);
                 $dbUsed = (int)$stmt->fetchColumn();
-                $this->cache->add($key, $dbUsed, 86400);
+                
+                // Check if there's a stale cache value (exists but maybe expired/not detected)
+                // Force a raw get to check for any lingering value
+                $cachedValue = $this->cache->get($key);
+                if ($cachedValue !== null && (int)$cachedValue > $dbUsed) {
+                    // Cache has higher value - persist it to DB immediately
+                    $this->pdo->prepare("UPDATE endpoint_providers SET used = ? WHERE id = ?")
+                        ->execute([(int)$cachedValue, $epId]);
+                    $dbUsed = (int)$cachedValue; // Use the higher value
+                }
+                
+                // Clear any stale cache and reseed fresh from DB (now has correct value)
+                $this->cache->delete($key);
+                $added = $this->cache->add($key, $dbUsed, 86400);
+                
+                // If add failed (race: another request seeded it), verify it exists now
+                if (!$added && !$this->cache->exists($key)) {
+                    // Key still doesn't exist - this shouldn't happen, but fallback to DB mode
+                    error_log("Cache seeding failed for res:ep:$epId, falling back to DB mode");
+                    goto db_mode;
+                }
             }
             
             // Cache mode: atomic increment
@@ -911,6 +935,7 @@ class Gateway {
             return true;
         }
         
+        db_mode:
         // DB mode: atomic UPDATE with condition
         $stmt = $this->pdo->prepare(
             "UPDATE endpoint_providers SET used = used + 1 WHERE id = ? AND used < ?"

@@ -68,8 +68,10 @@ class Cache {
     public function exists(string $key): bool {
         if (!$this->enabled) return false;
         
-        if ($this->driver === 'apcu' && function_exists('apcu_exists')) {
-            return apcu_exists($key);
+        if ($this->driver === 'apcu' && function_exists('apcu_fetch')) {
+            $success = false;
+            apcu_fetch($key, $success);  // Returns false for expired or missing keys
+            return $success;
         }
         
         // File fallback - check existence AND expiry

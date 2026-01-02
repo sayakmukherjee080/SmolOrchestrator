@@ -136,27 +136,32 @@ if ($cache->isEnabled()) {
 
     // Sync res:ep:id keys (endpoint_providers reservations - new format)
     // These are the SOURCE OF TRUTH, so we SET (not increment) and do NOT delete
-    $resKeys = $cache->scan('res:ep:*');
-    echo "[Worker] Found " . count($resKeys) . " reservation keys.\n";
+    // ONLY sync when cache is ENABLED - otherwise DB is source of truth
+    if ($settings['cache_enabled'] ?? false) {
+        $resKeys = $cache->scan('res:ep:*');
+        echo "[Worker] Found " . count($resKeys) . " reservation keys.\n";
 
-    if ($resKeys) {
-        $pdo->beginTransaction();
-        foreach ($resKeys as $key) {
-            // Key format: res:ep:id
-            $parts = explode(':', $key);
-            if (count($parts) !== 3 || $parts[0] !== 'res' || $parts[1] !== 'ep') continue;
-            
-            $id = (int)$parts[2];
-            $val = (int)$cache->get($key);
-            
-            if ($val > 0) {
-                // SET used to cache value (cache is source of truth)
-                $pdo->prepare("UPDATE endpoint_providers SET used = ? WHERE id = ?")->execute([$val, $id]);
-                // Do NOT delete - reservation key is the live counter
+        if ($resKeys) {
+            $pdo->beginTransaction();
+            foreach ($resKeys as $key) {
+                // Key format: res:ep:id
+                $parts = explode(':', $key);
+                if (count($parts) !== 3 || $parts[0] !== 'res' || $parts[1] !== 'ep') continue;
+                
+                $id = (int)$parts[2];
+                $val = (int)$cache->get($key);
+                
+                if ($val > 0) {
+                    // SET used to cache value (cache is source of truth)
+                    $pdo->prepare("UPDATE endpoint_providers SET used = ? WHERE id = ?")->execute([$val, $id]);
+                    // Do NOT delete - reservation key is the live counter
+                }
             }
+            $pdo->commit();
+            echo "[Worker] Reservations synced.\n";
         }
-        $pdo->commit();
-        echo "[Worker] Reservations synced.\n";
+    } else {
+        echo "[Worker] Cache disabled, skipping reservation sync (DB is source of truth).\n";
     }
 }
 
