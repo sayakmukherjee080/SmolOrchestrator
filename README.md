@@ -68,8 +68,8 @@ SmolOrchestrator acts as a transparent proxy that normalizes requests, making di
 | :--- | :---: | :--- |
 | **OpenAI** | ✅ | Native support. |
 | **OpenRouter** | ✅ | Works perfectly. |
-| **Google Gemini** | ✅ | **Auto-Translation Layer**: We automatically convert OpenAI format to Google's REST format on the fly. |
-| **Vertex AI** | ✅ | Supported via standard endpoint mapping. |
+| **Google Gemini** | ✅ | Works via their [OpenAI Compatibility](https://ai.google.dev/gemini-api/docs/openai) endpoints. |
+| **Vertex AI** | ✅ | Works if using an OpenAI-compatible adapter. |
 | **Nvidia NIM** | ✅ | Fully compatible. |
 | **Groq / Cerebras** | ✅ | Fast inference supported. |
 
