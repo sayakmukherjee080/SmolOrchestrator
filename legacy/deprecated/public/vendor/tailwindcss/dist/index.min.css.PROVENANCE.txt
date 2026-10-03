@@ -1,0 +1,4 @@
+ARCHIVED FROM: public/vendor/tailwindcss/dist/index.min.css
+ARCHIVED ON: 2026-10-03
+REASON: Unreferenced vendor asset; no PHP/HTML/CSS file in the project imports it.
+STATUS: Whole file moved here unchanged. Restore to the original path if a Tailwind prebuilt index.css is ever needed.

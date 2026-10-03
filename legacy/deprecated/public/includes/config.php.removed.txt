@@ -1,0 +1,7 @@
+ARCHIVED FROM: public/includes/config.php
+ARCHIVED ON: 2026-10-03
+REASON: Assigned but never used; app_secret is resolved by helpers.php.
+ORIGINAL LINES: 17
+---------------------------------------------------------------------
+
+$secretPath = $storageDir . '/app_secret';

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmolOrchestrator</title>
+  <link rel="stylesheet" href="/admin/styles.css">
+  <script type="module" src="/admin/js/app.js"></script>
+</head>
+<body>
+  <div id="login-view" class="login-shell hidden">
+    <form id="login-form" class="login-card" autocomplete="on">
+      <div class="login-brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>SmolOrchestrator</h1>
+          <p class="muted">Sign in to manage the gateway</p>
+        </div>
+      </div>
+      <label class="field">
+        <span>Email</span>
+        <input id="login-email" type="email" name="email" required autocomplete="username" placeholder="admin@example.com">
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input id="login-password" type="password" name="password" required autocomplete="current-password" placeholder="Password">
+      </label>
+      <p id="login-error" class="form-error hidden" role="alert"></p>
+      <button class="btn primary block" type="submit">Sign in</button>
+    </form>
+  </div>
+
+  <div id="app-view" class="hidden">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">SmolOrchestrator</span>
+      </div>
+      <nav class="tabs" id="tabs" aria-label="Sections">
+        <button class="tab" data-section="models">Models</button>
+        <button class="tab" data-section="tokens">Tokens</button>
+        <button class="tab" data-section="usage">Usage</button>
+        <button class="tab" data-section="logs">Logs</button>
+        <button class="tab" data-section="settings">Settings</button>
+      </nav>
+      <div class="topbar-actions">
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle color theme" title="Toggle theme">
+          <span class="theme-icon" aria-hidden="true"></span>
+        </button>
+        <button id="logout-btn" class="btn ghost" type="button">Sign out</button>
+      </div>
+    </header>
+    <main id="main" class="main" aria-live="polite"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+</body>
+</html>

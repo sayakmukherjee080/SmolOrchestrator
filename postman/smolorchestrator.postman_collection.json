@@ -1,0 +1,518 @@
+{
+  "info": {
+    "name": "SmolOrchestrator",
+    "description": "Lightweight OpenAI-compatible AI gateway. Gateway endpoints use OpenAI error shapes; admin endpoints use the { success, data } / { success, error, code } envelope. Admin mutations require the X-CSRF-Token header captured by the Login request.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8787" },
+    { "key": "apiKey", "value": "YOUR_GATEWAY_KEY" },
+    { "key": "adminEmail", "value": "admin@example.com" },
+    { "key": "adminPassword", "value": "your-password" },
+    { "key": "csrf", "value": "" },
+    { "key": "modelId", "value": "1" },
+    { "key": "providerId", "value": "1" },
+    { "key": "routeId", "value": "1" },
+    { "key": "keyId", "value": "1" },
+    { "key": "tokenId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "description": "200 { status: 'ok' }."
+          }
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health/ready",
+            "description": "200 { status: 'ready' }; 503 { status: 'unavailable', error } when the database is unreachable."
+          }
+        },
+        {
+          "name": "Prometheus metrics",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/metrics",
+            "description": "Prometheus text exposition (version 0.0.4): requests by model/provider/outcome, tokens by direction, estimated cost, probe results, budget rejections, route health gauges, uptime. Requires `Authorization: Bearer <METRICS_TOKEN>` when METRICS_TOKEN is configured; open otherwise."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Gateway",
+      "item": [
+        {
+          "name": "List models",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{apiKey}}" }],
+            "url": "{{baseUrl}}/v1/models",
+            "description": "200 { object: 'list', data: [{ id, object, created, owned_by }] } scoped to the token. 401 { error: { message, type, code } }."
+          }
+        },
+        {
+          "name": "Chat completions",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"ds-v4.1-flash\",\n  \"messages\": [{ \"role\": \"user\", \"content\": \"Hello\" }],\n  \"stream\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/v1/chat/completions",
+            "description": "OpenAI-compatible chat proxy. `stream: true` responses are SSE and the gateway injects stream_options.include_usage when absent. Any other POST under /v1/* is routed the same way when the JSON body carries a `model` field. Deterministic requests (temperature 0, non-stream) may be served from the exact response cache; responses carry X-Smolorchestrator-Provider, X-Cache (hit/miss/coalesced), X-Request-Cost when known, and X-Budget-Remaining/X-Budget-Warning headers. 200 passthrough; 400 invalid_json/invalid_request_error/unsupported_feature; 401 invalid_api_key; 404 model_not_found; 413 payload_too_large; 429 rate_limit_exceeded/budget_exceeded; 502 all_providers_failed."
+          }
+        },
+        {
+          "name": "Embeddings",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"ds-v4.1-flash\",\n  \"input\": \"embed this\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/v1/embeddings",
+            "description": "OpenAI-compatible embeddings proxy; same routing and error shapes as chat completions."
+          }
+        },
+        {
+          "name": "Image generations",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"ds-v4.1-flash\",\n  \"prompt\": \"a small robot\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/v1/images/generations",
+            "description": "OpenAI-compatible image proxy; same routing and error shapes as chat completions."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "if (payload.success) pm.collectionVariables.set('csrf', payload.data.csrf);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/session",
+            "description": "200 { success: true, data: { email, csrf } } and sets the HttpOnly session cookie. 401 invalid_credentials; 429 locked. Run this first: it populates the csrf collection variable."
+          }
+        },
+        {
+          "name": "Current session",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/session",
+            "description": "200 { success: true, data: { email, csrf } }; 401 unauthorized."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-CSRF-Token", "value": "{{csrf}}" }],
+            "url": "{{baseUrl}}/api/v1/session",
+            "description": "200 { success: true, data: {} } and clears the session cookie. Requires CSRF header."
+          }
+        },
+        {
+          "name": "List models",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/models",
+            "description": "200 { success: true, data: { models: [{ id, name, balanceStrategy, routes: [...] }] } }."
+          }
+        },
+        {
+          "name": "Create model",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ds-v4.1-flash\",\n  \"balanceStrategy\": \"round_robin\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/models",
+            "description": "201 { success: true, data: { id, name, balanceStrategy } }. balanceStrategy is round_robin, least_used, or cache_aware. 422 validation_error (invalid name or strategy, duplicate name)."
+          }
+        },
+        {
+          "name": "Update model",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"balanceStrategy\": \"least_used\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/models/{{modelId}}",
+            "description": "200 { success: true, data: model }. Accepts name, balanceStrategy (round_robin, least_used, cache_aware), and cacheEnabled (exact response cache for temperature=0 requests)."
+          }
+        },
+        {
+          "name": "Delete model",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-CSRF-Token", "value": "{{csrf}}" }],
+            "url": "{{baseUrl}}/api/v1/models/{{modelId}}",
+            "description": "200 { success: true, data: { id } }. Soft-deletes the model and its routes."
+          }
+        },
+        {
+          "name": "List routes",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/models/{{modelId}}/routes",
+            "description": "200 { success: true, data: { routes: [{ id, providerId, upstreamModel, priority, inputCostPerM, outputCostPerM, dailyQuota, consecutiveFailures, cooldownUntil }] } }."
+          }
+        },
+        {
+          "name": "Create route",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"providerId\": 1,\n  \"upstreamModel\": \"deepseek/v4.1-flash\",\n  \"priority\": 1,\n  \"inputCostPerM\": 0.2,\n  \"outputCostPerM\": 0.8,\n  \"dailyQuota\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/models/{{modelId}}/routes",
+            "description": "201 { success: true, data: route }. dailyQuota null/omitted means unlimited; an integer caps daily requests for this route. inputCostPerM/outputCostPerM/cachedInputCostPerM are optional: null auto-prices from the built-in reference map (cached cost falls back to the cached_input_discount setting), 0 is explicitly free. capabilities is null (unrestricted), [] (declares none), or a subset of tools/vision/audio/json/reasoning. maxContext rejects requests whose estimated input plus max_tokens exceeds it."
+          }
+        },
+        {
+          "name": "Update route",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"priority\": 2,\n  \"inputCostPerM\": 0.25,\n  \"outputCostPerM\": 0.9,\n  \"dailyQuota\": 500\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/routes/{{routeId}}",
+            "description": "200 { success: true, data: route }. Any subset of providerId, upstreamModel, priority, inputCostPerM, outputCostPerM, dailyQuota."
+          }
+        },
+        {
+          "name": "Delete route",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-CSRF-Token", "value": "{{csrf}}" }],
+            "url": "{{baseUrl}}/api/v1/routes/{{routeId}}",
+            "description": "200 { success: true, data: { id } }. Soft delete."
+          }
+        },
+        {
+          "name": "List providers",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/providers",
+            "description": "200 { success: true, data: { providers: [{ id, name, baseUrl, keys: [{ id, label, enabled, disabledUntil }] }] } }. Plaintext keys are never returned."
+          }
+        },
+        {
+          "name": "Create provider",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"openrouter\",\n  \"baseUrl\": \"https://openrouter.ai/api/v1\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/providers",
+            "description": "201 { success: true, data: provider }. baseUrl must be an http(s) OpenAI-compatible root."
+          }
+        },
+        {
+          "name": "Update provider",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"openrouter-main\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/providers/{{providerId}}",
+            "description": "200 { success: true, data: provider }. Accepts name and/or baseUrl."
+          }
+        },
+        {
+          "name": "Delete provider",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-CSRF-Token", "value": "{{csrf}}" }],
+            "url": "{{baseUrl}}/api/v1/providers/{{providerId}}",
+            "description": "200 { success: true, data: { id } }. Soft-deletes the provider together with its keys and routes."
+          }
+        },
+        {
+          "name": "Fetch upstream models",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/providers/{{providerId}}/upstream-models",
+            "description": "200 { success: true, data: { models: [{ id }] } }. Calls the provider's /models with a pooled key; 422 when the provider has no usable key or the upstream call fails."
+          }
+        },
+        {
+          "name": "Add provider key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"main\",\n  \"key\": \"sk-or-...\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/providers/{{providerId}}/keys",
+            "description": "201 { success: true, data: { id, providerId, label, enabled } }. The key is encrypted at rest and entered into the provider's rotation pool."
+          }
+        },
+        {
+          "name": "Update provider key",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/keys/{{keyId}}",
+            "description": "200 { success: true, data: { id, providerId, label, enabled } }. Enabling clears any temporary 401/403 disable window."
+          }
+        },
+        {
+          "name": "Delete provider key",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-CSRF-Token", "value": "{{csrf}}" }],
+            "url": "{{baseUrl}}/api/v1/keys/{{keyId}}",
+            "description": "200 { success: true, data: { id } }. Soft-removes the key from the rotation pool."
+          }
+        },
+        {
+          "name": "List tokens",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/tokens",
+            "description": "200 { success: true, data: { tokens: [{ id, label, enabled, createdAt, modelIds, dailyRequestLimit, monthlyRequestLimit, dailySpendLimit, monthlySpendLimit, budgetUsage, budgetWarnings, budgetRemaining }] } }."
+          }
+        },
+        {
+          "name": "Create token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"opencode-laptop\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/tokens",
+            "description": "201 { success: true, data: { id, label, enabled, createdAt, dailyRequestLimit, monthlyRequestLimit, dailySpendLimit, monthlySpendLimit, raw } }. Budget fields are optional and null/omitted means unlimited. The raw key is returned exactly once; only its SHA-256 hash is stored."
+          }
+        },
+        {
+          "name": "Update token",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/tokens/{{tokenId}}",
+            "description": "200 { success: true, data: token }. Accepts label, enabled, and the four budget fields (dailyRequestLimit, monthlyRequestLimit, dailySpendLimit, monthlySpendLimit); null clears a limit."
+          }
+        },
+        {
+          "name": "Delete token",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-CSRF-Token", "value": "{{csrf}}" }],
+            "url": "{{baseUrl}}/api/v1/tokens/{{tokenId}}",
+            "description": "200 { success: true, data: { id } }. Soft-deletes the token and clears its scope."
+          }
+        },
+        {
+          "name": "Set token model scope",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modelIds\": [1, 3]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/tokens/{{tokenId}}/models",
+            "description": "200 { success: true, data: { modelIds: [...] } }. Replaces the scope; /v1/models and routing honour it immediately."
+          }
+        },
+        {
+          "name": "Usage report",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/usage?entity=model",
+            "description": "200 { success: true, data: { usage: [...], cacheStats: [{ model, hits, misses, coalesced, saved_cost, saved_tokens_in, saved_tokens_out }], latency: [{ model, provider, requests, p50, p95 }] } }. Optional filters: entity (model|token|provider|route), windowStart (epoch ms)."
+          }
+        },
+        {
+          "name": "Telemetry",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/telemetry?limit=100&offset=0",
+            "description": "200 { success: true, data: { telemetry: [{ ts, token_id, model_id, route_id, attempt, status, latency_ms, input_tokens, output_tokens, est_cost, bytes, estimated, is_probe, error }] } }. No prompt or completion content is stored."
+          }
+        },
+        {
+          "name": "Get settings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/settings",
+            "description": "200 { success: true, data: { settings: { backoff_base_ms, backoff_cap_ms, probe_enabled, probe_budget_per_hour } } }."
+          }
+        },
+        {
+          "name": "Update settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"backoff_base_ms\": 60000,\n  \"backoff_cap_ms\": 900000,\n  \"probe_enabled\": true,\n  \"probe_budget_per_hour\": 12,\n  \"health_check_enabled\": true,\n  \"health_check_interval_ms\": 900000,\n  \"response_cache_enabled\": true,\n  \"response_cache_ttl_ms\": 300000,\n  \"response_cache_max_entries\": 500,\n  \"response_cache_max_body_bytes\": 1048576,\n  \"cached_input_discount\": 0.1,\n  \"budget_warn_ratio\": 0.8\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/settings",
+            "description": "200 { success: true, data: { settings } }. Accepted keys: backoff_base_ms, backoff_cap_ms, probe_enabled, probe_budget_per_hour, health_check_enabled, health_check_interval_ms (min 10000), response_cache_enabled, response_cache_ttl_ms (min 1000), response_cache_max_entries (min 1), response_cache_max_body_bytes (min 1024), cached_input_discount (0-1), budget_warn_ratio (0-1). Applies immediately."
+          }
+        },
+        {
+          "name": "List backups",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/backups",
+            "description": "200 { success: true, data: { backups: [{ name, sizeBytes, createdAt }], enabled, intervalMs, keep } }."
+          }
+        },
+        {
+          "name": "Create backup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-CSRF-Token", "value": "{{csrf}}" }],
+            "url": "{{baseUrl}}/api/v1/backups",
+            "description": "201 { success: true, data: { backup: { name, sizeBytes, createdAt } } }. Runs VACUUM INTO and prunes beyond BACKUP_KEEP."
+          }
+        },
+        {
+          "name": "Export config",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/config/export?secrets=0",
+            "description": "200 { success: true, data: { bundle, warning } }. Bundle v1: models with routes (provider by name, costs, capabilities, maxContext), providers, and tokens (hashes, budgets, model names). secrets=1 includes encrypted provider keys, importable only where APP_SECRET matches."
+          }
+        },
+        {
+          "name": "Import config",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bundle\": { \"version\": 1, \"models\": [], \"providers\": [], \"tokens\": [] }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/config/import",
+            "description": "200 { success: true, data: { created: { providers, keys, models, routes, tokens }, skipped: {...} } }. Merge-only: existing records are skipped, nothing is deleted. Provider secrets import only when encrypted with this instance's APP_SECRET."
+          }
+        }
+      ]
+    }
+  ]
+}

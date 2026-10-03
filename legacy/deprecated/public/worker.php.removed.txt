@@ -1,0 +1,31 @@
+ARCHIVED FROM: public/worker.php
+ARCHIVED ON: 2026-10-03
+REASON: Second PDO connection duplicated the one already opened by includes/config.php; inner cache_enabled check duplicated the enclosing isEnabled() guard; log-rotation block unreachable because requests.log is renamed and unlinked earlier in the same run.
+ORIGINAL LINES: 11-12, 140, 163-165, 168-179
+---------------------------------------------------------------------
+
+[duplicate connection]
+// Initialize
+$pdo = new PDO('sqlite:' . __DIR__ . '/../storage/app.db');
+$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+[inner cache check wrapper]
+    if ($settings['cache_enabled'] ?? false) {
+...
+    } else {
+        echo "[Worker] Cache disabled, skipping reservation sync (DB is source of truth).\n";
+    }
+
+[dead log rotation]
+// 3. Log Rotation
+$rotationLogFile = __DIR__ . '/../storage/logs/requests.log';
+if (file_exists($rotationLogFile) && filesize($rotationLogFile) > 20 * 1024 * 1024) { // 20MB
+    echo "[Worker] Rotating log file...\n";
+    rename($rotationLogFile, $rotationLogFile . '.' . date('YmdHis') . '.bak');
+    // Keep last 5 logs
+    $logs = glob(__DIR__ . '/../storage/logs/requests.log.*.bak');
+    if (count($logs) > 5) {
+        usort($logs, function($a, $b) { return filemtime($a) - filemtime($b); });
+        unlink($logs[0]); // Delete oldest
+    }
+}

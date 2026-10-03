@@ -1,0 +1,19 @@
+ARCHIVED FROM: public/install.php
+ARCHIVED ON: 2026-10-03
+REASON: session_start() with no session usage; debug log write for a rename warning (install.php.bak rename itself retained).
+ORIGINAL LINES: 4, 275-283
+---------------------------------------------------------------------
+
+[session]
+session_start();
+
+[debug log block]
+            // FIXED: Try to rename, but don't fail if it doesn't work
+            // The lock file is the real protection mechanism
+            $renamed = @rename(__FILE__, __FILE__ . '.bak');
+            
+            // Optional: Log if rename failed (for debugging)
+            if (!$renamed) {
+                $debugLog = $storageDir . '/install_debug.log';
+                @file_put_contents($debugLog, "[".date('c')."] Warning: Could not rename install.php (permissions?)\n", FILE_APPEND);
+            }

@@ -1,0 +1,27 @@
+ARCHIVED FROM: public/includes/classes/Auth.php
+ARCHIVED ON: 2026-10-03
+REASON: Never called anywhere; public/logout.php performs a raw session_destroy() instead. Remember-me token/cookie cleanup was only reachable through this method.
+ORIGINAL LINES: 45-65
+---------------------------------------------------------------------
+
+    public function logout() {
+        if (session_status() === PHP_SESSION_NONE) session_start();
+        $_SESSION = [];
+        if (ini_get("session.use_cookies")) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000,
+                $params["path"], $params["domain"],
+                $params["secure"], $params["httponly"]
+            );
+        }
+        session_destroy();
+        
+        // Clear Remember Cookie
+        if (isset($_COOKIE[$this->cookieName])) {
+            $parts = explode(':', $_COOKIE[$this->cookieName]);
+            if (count($parts) === 2) {
+                $this->pdo->prepare("DELETE FROM auth_tokens WHERE selector = ?")->execute([$parts[0]]);
+            }
+            setcookie($this->cookieName, '', time() - 3600, '/', '', true, true);
+        }
+    }

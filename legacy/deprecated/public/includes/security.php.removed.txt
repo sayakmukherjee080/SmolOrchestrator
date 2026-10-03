@@ -1,0 +1,10 @@
+ARCHIVED FROM: public/includes/security.php
+ARCHIVED ON: 2026-10-03
+REASON: $host assigned but never used; commented-out localhost logic.
+ORIGINAL LINES: 19-22
+---------------------------------------------------------------------
+
+    // Allow localhost/127.0.0.1 for development (still use nonces)
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    // $isLocal = str_contains($host, 'localhost') || str_contains($host, '127.0.0.1'); 
+    // Actually, strict CSP is best everywhere.

@@ -1,0 +1,48 @@
+ARCHIVED FROM: public/css/style.css
+ARCHIVED ON: 2026-10-03
+REASON: No markup in the project uses these selectors or custom property.
+ORIGINAL LINES: 3-5, 88-90, 155-172, 188-192, 195-200
+---------------------------------------------------------------------
+
+:root {
+  --scan-color: rgba(16, 185, 129, 0.05);
+}
+
+.border-glow {
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
+/* FAST SKEW & COLOR CHANGE */
+.menu-item-skew {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+
+.menu-item-skew:hover {
+  transform: skewX(-12deg) translateX(10px);
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #10b981 !important;
+  text-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.menu-item-skew:hover span {
+  transform: skewX(12deg);
+  /* Counter-skew text */
+  display: inline-block;
+}
+
+/* TERMINAL BOXES */
+.terminal-box {
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5),
+    4px 4px 0 rgba(16, 185, 129, 0.1);
+}
+
+/* GRID OVERLAY (SUBTLE) */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+}

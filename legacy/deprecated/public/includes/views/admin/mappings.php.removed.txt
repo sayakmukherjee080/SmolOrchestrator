@@ -1,0 +1,70 @@
+ARCHIVED FROM: public/includes/views/admin/mappings.php
+ARCHIVED ON: 2026-10-03
+REASON: Dead JavaScript: unused JSON payload, no-op provider option reset (plus its onchange attribute), shadowed duplicate toggleMappingEdit(), orphaned saveMappingQuota() targeting a non-existent AJAX action, and production console logging.
+ORIGINAL LINES: 13 (onchange), 68-78, 104-117, 139-148, 156, 167, 170
+---------------------------------------------------------------------
+
+[onchange attribute on the endpoint select]
+onchange="updateProviderOptions()"
+
+[unused data + no-op function]
+        const existingMappings = <?php echo json_encode($data['maps']); ?>;
+        function updateProviderOptions() {
+            const endpointId = parseInt(document.getElementById('map-endpoint').value);
+            const providerSelect = document.getElementById('map-provider');
+            const options = providerSelect.options;
+            // Always show all options to allow multiple models per provider (e.g. fallbacks)
+            for (let i = 0; i < options.length; i++) {
+                options[i].hidden = false;
+                options[i].disabled = false;
+            }
+        }
+
+[shadowed toggleMappingEdit + orphaned saveMappingQuota + stray call]
+        function toggleMappingEdit(id) {
+            const display = document.getElementById('quota-display-' + id);
+            const edit = document.getElementById('quota-edit-' + id);
+            display.classList.toggle('hidden');
+            edit.classList.toggle('hidden');
+            if(!edit.classList.contains('hidden')) {
+                const inp = document.getElementById('quota-input-' + id);
+                inp.focus();
+                inp.select();
+            }
+        }
+
+        async function saveMappingQuota(id) {
+            const inp = document.getElementById('quota-input-' + id);
+            const val = parseInt(inp.value) || 0; // Default to 0 if empty
+            
+            const fd = new FormData();
+            fd.append('action', 'update_mapping_quota');
+            fd.append('map_id', id);
+            fd.append('quota', val);
+            fd.append('csrf', document.querySelector('meta[name="csrf-token"]').content);
+            
+            // Disable inputs while saving
+            inp.disabled = true;
+            
+            try {
+                const res = await fetch('', { method: 'POST', body: fd });
+                // Reload to reflect changes as flash message and list update is simplest
+                window.location.href = window.location.pathname + window.location.search;
+            } catch(e) {
+                alert('SAVE_FAILED');
+                inp.disabled = false;
+            }
+        }
+        
+        updateProviderOptions();
+
+        // Enhanced Inline Editing with Logging
+
+[console logging]
+            console.log(`[UI] Toggling edit mode for mapping ${id}`);
+            console.log(`[UI] Attempting save for mapping ${id}`);
+            console.log(`[DATA] New Values - Quota: ${quotaVal}, Priority: ${prioVal}`);
+                const res = await fetch('', { method: 'POST', body: fd });
+                console.log(`[NET] Save request completed for ${id}`);
+                console.error(`[ERR] Save failed for ${id}`, e);
+NOTE: No handler for action "update_mapping_quota" exists in AdminController; the surviving update path is action "update_mapping_details".

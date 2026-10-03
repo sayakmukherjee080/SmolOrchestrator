@@ -1,0 +1,32 @@
+ARCHIVED FROM: public/includes/helpers.php
+ARCHIVED ON: 2026-10-03
+REASON: app_secret() getenv() branch unreachable per install design and CONTRIBUTING (no getenv for critical config); dec_key() alias replaced by dec() at its only call site; csrf_check() unused because CSRF enforcement is currently disabled.
+ORIGINAL LINES: 8, 14-17, 54-59, 70-77
+---------------------------------------------------------------------
+
+[app_secret docblock wording and getenv branch]
+/**
+ * Get the application secret from env or file.
+ */
+    if (getenv('APP_SECRET')) {
+        $secret = getenv('APP_SECRET');
+        return $secret;
+    }
+
+[dec_key alias]
+/**
+ * Alias for consistency.
+ */
+function dec_key(string $blob): string {
+    return dec($blob);
+}
+
+[csrf_check]
+/**
+ * CSRF token check.
+ */
+function csrf_check(?string $token): bool {
+    if (session_status() === PHP_SESSION_NONE) session_start();
+    if (empty($_SESSION['csrf_token']) || empty($token)) return false;
+    return hash_equals($_SESSION['csrf_token'], $token);
+}

@@ -1,0 +1,16 @@
+{
+  "name": "smolorchestrator",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Lightweight, self-hosted OpenAI-compatible AI gateway: one key, many providers, routing, key pools, and telemetry.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "setup": "node setup.js",
+    "start": "node src/server.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "license": "AGPL-3.0-only"
+}

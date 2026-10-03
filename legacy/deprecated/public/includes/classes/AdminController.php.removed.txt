@@ -1,0 +1,75 @@
+ARCHIVED FROM: public/includes/classes/AdminController.php
+ARCHIVED ON: 2026-10-03
+REASON: Commented-out CSRF enforcement; debug writes to dev/err.log; duplicate $action read; curl_close remnants; fabricated/unused dashboard stats payload; redundant page-data queries for views that never use them.
+ORIGINAL LINES: 18-21, 133-134, 141, 241-250, 272, 294, 307-327, 332, 378, 420-423
+---------------------------------------------------------------------
+
+[handlePostActions CSRF block]
+        // TEMPORARILY DISABLED FOR DEBUGGING
+        // if (!csrf_check($_POST['csrf'] ?? '')) {
+        //     return ['type'=>'error','msg'=>'Invalid CSRF'];
+        // }
+
+[update_mapping_details debug logs]
+                // Log the update
+                $logMsg = date('[Y-m-d H:i:s]') . " UPDATE MAPPING [$id]: Prio=$priority, Quota=$quota" . PHP_EOL;
+                file_put_contents(__DIR__ . '/../../../dev/err.log', $logMsg, FILE_APPEND);
+...
+                file_put_contents(__DIR__ . '/../../../dev/err.log', date('[Y-m-d H:i:s]') . " UPDATE FAILED: Invalid ID" . PHP_EOL, FILE_APPEND);
+
+[handleAjaxActions duplicate reads + CSRF block]
+        // Enforce CSRF for ALL AJAX actions (converted to POST)
+        // We check $_REQUEST to allow flexibility but prefer POST
+        $action = $_POST['action'] ?? '';
+        $token = $_POST['csrf'] ?? '';
+
+        // TEMPORARILY DISABLED FOR DEBUGGING
+        // if (!csrf_check($token)) {
+        //     respond_json(['error' => 'Invalid CSRF token'], 403);
+        // }
+        
+        // Remove old GET origin check as CSRF token is stronger
+        $action = $_REQUEST['action'] ?? '';
+
+[curl_close remnants, twice]
+            // curl_close($ch); // Deprecated in PHP 8.0+
+
+[get_dashboard_stats fabricated stats]
+            // Calculate aggregate stats for JSON response
+            $today = strtotime('today');
+            
+            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM request_logs WHERE ts >= ?");
+            $stmt->execute([$today]);
+            $reqs = $stmt->fetchColumn();
+
+            $stmt = $this->pdo->prepare("SELECT COALESCE(SUM(prompt_tokens + completion_tokens),0) FROM request_logs WHERE ts >= ?");
+            $stmt->execute([$today]);
+            $toks = $stmt->fetchColumn();
+
+            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM request_logs WHERE status >= 400 AND ts >= ?");
+            $stmt->execute([$today]);
+            $errs = $stmt->fetchColumn();
+
+            $stats = [
+                'requests' => $reqs,
+                'tokens' => $toks,
+                'errors' => $errs,
+                'uptime' => '99.9%'
+            ];
+...
+                'stats' => $stats,
+                'mappings' => $this->getMappingsWithUsage(),
+NOTE: The token queries referenced prompt_tokens/completion_tokens columns that do not exist in request_logs, so this action errored on every dashboard poll. Removing it fixes the poll.
+
+[redundant dashboard page-data query]
+            $data['provider_usage'] = $this->pdo->query("SELECT e.name endpoint, p.name provider, ep.used, ep.quota FROM endpoint_providers ep JOIN endpoints e ON e.id=ep.endpoint_id JOIN providers p ON p.id=ep.provider_id ORDER BY e.name, ep.priority")->fetchAll(PDO::FETCH_ASSOC);
+
+[settings loaded for logs page but unused by logs view]
+            $settingsPath = __DIR__ . '/../../../storage/settings.json';
+            $data['settings'] = file_exists($settingsPath)
+                ? json_decode(file_get_contents($settingsPath) ?: '{"cache_enabled":false,"cache_driver":"file"}', true) ?? []
+                : ['cache_enabled' => false, 'cache_driver' => 'file'];
+
+[page-data conditions]
+        if (in_array($page, ['endpoints', 'mappings', 'keys', 'playground', 'dashboard', 'usage'])) {
+        if (in_array($page, ['providers', 'mappings', 'dashboard', 'usage'])) {

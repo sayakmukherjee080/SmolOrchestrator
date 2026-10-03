@@ -1,5 +1,10 @@
+# Repository artifacts
+node_modules/
+.env
+storage/
+*.log
+
+# Legacy PHP application artifacts
 .vscode/settings.json
 storage/app.db
-/storage
 dev/err.log
-*.log

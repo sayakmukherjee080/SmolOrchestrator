@@ -1,0 +1,21 @@
+ARCHIVED FROM: public/includes/classes/RateLimiter.php
+ARCHIVED ON: 2026-10-03
+REASON: checkKey() never called; constructor $pdo property stored but never used.
+ORIGINAL LINES: 5-11, 21-24
+---------------------------------------------------------------------
+
+[constructor]
+class RateLimiter {
+    private Cache $cache;
+    private PDO $pdo;
+
+    public function __construct(Cache $cache, PDO $pdo) {
+        $this->cache = $cache;
+        $this->pdo = $pdo;
+    }
+
+[checkKey]
+    public function checkKey(string $keyHash, int $limit = 60, int $window = 60): bool {
+        $key = "ratelimit:key:$keyHash";
+        return $this->processLimit($key, $limit, $window);
+    }

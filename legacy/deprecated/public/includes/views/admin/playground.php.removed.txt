@@ -1,0 +1,12 @@
+ARCHIVED FROM: public/includes/views/admin/playground.php
+ARCHIVED ON: 2026-10-03
+REASON: attachment.mime stored but never read; classList.remove('whitespace-pre-wrap') on a node the class is never added to.
+ORIGINAL LINES: 421-423, 562
+---------------------------------------------------------------------
+
+[unused mime property]
+                type: file.type.startsWith('image/') ? 'image_url' : 'input_audio',
+                mime: file.type
+
+[no-op class removal]
+        botNode.classList.remove('whitespace-pre-wrap');
