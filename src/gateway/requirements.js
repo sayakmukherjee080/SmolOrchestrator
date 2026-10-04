@@ -16,11 +16,6 @@ export function buildRequirements(payload, bodyBytes) {
   if (payload.tools !== undefined) {
     if (!Array.isArray(payload.tools)) throw new InputError('tools must be an array');
     if (payload.tools.length > 0) capabilities.add('tools');
-    for (const tool of payload.tools) {
-      if (!tool || typeof tool !== 'object' || typeof tool.function?.name !== 'string') {
-        throw new InputError('each tool requires function.name');
-      }
-    }
   }
   if (payload.response_format !== undefined) {
     if (payload.response_format === null || typeof payload.response_format !== 'object') {

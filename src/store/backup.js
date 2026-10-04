@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export function createBackupManager({ db, config, logger }) {
+export function createBackupManager({ db, registry, config, logger }) {
   let timer = null;
 
   // Ensures the backup directory exists.
@@ -31,8 +31,9 @@ export function createBackupManager({ db, config, logger }) {
 
   // Deletes backups beyond the retention count.
   function prune() {
+    const keep = registry.setting('backup_keep', config.backupKeep);
     const files = list();
-    for (const stale of files.slice(config.backupKeep)) {
+    for (const stale of files.slice(keep)) {
       fs.unlinkSync(path.join(config.backupPath, stale.name));
     }
   }
@@ -53,16 +54,17 @@ export function createBackupManager({ db, config, logger }) {
     return list()[0];
   }
 
-  // Starts the periodic backup timer.
+  // Starts the periodic backup timer, honouring the stored interval override.
   function start() {
     if (!config.backupEnabled || timer) return;
+    const interval = registry.setting('backup_interval_ms', config.backupIntervalMs);
     timer = setInterval(() => {
       try {
         createNow();
       } catch (error) {
         logger?.error('scheduled backup failed', { error: error.message });
       }
-    }, config.backupIntervalMs);
+    }, interval);
     timer.unref?.();
   }
 

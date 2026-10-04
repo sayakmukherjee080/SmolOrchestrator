@@ -138,3 +138,23 @@ test('admin API security and CRUD', async (t) => {
     }
   });
 });
+
+test('login lockout ignores spoofed proxy headers when TRUST_PROXY is off', async (t) => {
+  const app = await createTestApp();
+  await t.after(() => app.close());
+
+  for (let i = 0; i < 5; i += 1) {
+    const response = await fetch(`${app.baseUrl}/api/v1/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': `198.51.100.${i + 1}` },
+      body: JSON.stringify({ email: TEST_EMAIL, password: 'wrong' }),
+    });
+    assert.equal(response.status, 401);
+  }
+  const locked = await fetch(`${app.baseUrl}/api/v1/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.99' },
+    body: JSON.stringify({ email: TEST_EMAIL, password: TEST_PASSWORD }),
+  });
+  assert.equal(locked.status, 429, 'lockout keyed to the real peer, not the header');
+});

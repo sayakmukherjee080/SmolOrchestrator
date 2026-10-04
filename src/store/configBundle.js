@@ -57,13 +57,32 @@ export function exportBundle(registry, { includeSecrets = false } = {}) {
   };
 }
 
-// Validates the bundle envelope before any writes.
+// Validates the bundle envelope and record shapes before any writes.
 function validateBundle(bundle) {
   if (!bundle || typeof bundle !== 'object' || bundle.version !== 1) {
     throw new ValidationError('unsupported bundle version');
   }
   for (const key of ['models', 'providers', 'tokens']) {
     if (!Array.isArray(bundle[key])) throw new ValidationError(`bundle.${key} must be an array`);
+  }
+  for (const provider of bundle.providers) {
+    if (!provider || typeof provider.name !== 'string' || typeof provider.baseUrl !== 'string') {
+      throw new ValidationError('each provider requires name and baseUrl');
+    }
+  }
+  for (const model of bundle.models) {
+    if (!model || typeof model.name !== 'string') throw new ValidationError('each model requires a name');
+    if (model.routes !== undefined && !Array.isArray(model.routes)) {
+      throw new ValidationError(`model ${model.name} routes must be an array`);
+    }
+    for (const route of model.routes || []) {
+      if (!route || typeof route.provider !== 'string' || typeof route.upstreamModel !== 'string') {
+        throw new ValidationError(`model ${model.name} routes require provider and upstreamModel`);
+      }
+    }
+  }
+  for (const token of bundle.tokens) {
+    if (!token || typeof token.keyHash !== 'string') throw new ValidationError('each token requires keyHash');
   }
 }
 

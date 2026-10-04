@@ -17,6 +17,14 @@ const REQUEST_STRIP = new Set([
   'authorization',
   'content-length',
   'accept-encoding',
+  'cookie',
+  'x-csrf-token',
+  'forwarded',
+  'x-request-id',
+  'cf-connecting-ip',
+  'cf-connecting-ipv6',
+  'cf-ipcountry',
+  'cdn-loop',
 ]);
 
 // Extracts a Bearer token from the Authorization header, or null.
@@ -59,11 +67,15 @@ export function buildClientResponseHeaders(upstreamResponse) {
 // Symbol used by the HTTP adapter to expose the peer socket address.
 export const PEER_IP = Symbol('peerIp');
 
-// Resolves the client IP, honouring the trusted proxy header when enabled.
+// Resolves the client IP, honouring trusted proxy headers when enabled.
 export function clientIp(request, trustProxy) {
   if (trustProxy) {
+    const cloudflare = request.headers.get('cf-connecting-ip');
+    if (cloudflare) return cloudflare.trim();
     const forwarded = request.headers.get('x-forwarded-for');
     if (forwarded) return forwarded.split(',')[0].trim();
+    const real = request.headers.get('x-real-ip');
+    if (real) return real.trim();
   }
   return request[PEER_IP] || 'unknown';
 }

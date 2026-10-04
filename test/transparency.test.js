@@ -57,11 +57,24 @@ test('non-stream request body is unchanged except the model rewrite', async (t) 
 
   await fetch(`${app.baseUrl}/v1/chat/completions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${raw}` },
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${raw}`,
+      cookie: 'so_session=secret-session',
+      'x-csrf-token': 'secret-csrf',
+      'x-forwarded-for': '203.0.113.9',
+      forwarded: 'for=203.0.113.9',
+    },
     body: JSON.stringify({ model: 'pass', messages: [], temperature: 0.5, stream_options: { foo: 1 } }),
   });
   const sent = upstream.state.requests[0].body;
   assert.equal(sent.model, 'upstream-id');
   assert.equal(sent.temperature, 0.5, 'unrelated fields preserved');
   assert.deepEqual(sent.stream_options, { foo: 1 }, 'stream_options untouched for non-stream requests');
+
+  const headers = upstream.state.requests[0].headers;
+  assert.equal(headers.cookie, undefined, 'session cookie is not forwarded upstream');
+  assert.equal(headers['x-csrf-token'], undefined, 'csrf token is not forwarded upstream');
+  assert.equal(headers['x-forwarded-for'], undefined, 'proxy chain headers are not forwarded upstream');
+  assert.equal(headers.forwarded, undefined);
 });

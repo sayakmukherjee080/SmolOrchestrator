@@ -87,6 +87,36 @@ test('failing route is cooled down and skipped on later requests', async (t) => 
   assert.equal(failing.state.requests.length, before, 'cooling route was skipped');
 });
 
+test('key failures per route are capped before moving on', async (t) => {
+  const seenAuth = [];
+  const failing = await startStubUpstream((req, res) => {
+    seenAuth.push(req.headers.authorization);
+    jsonCompletion(res, { status: 401 });
+  });
+  const healthy = await startStubUpstream((req, res) => jsonCompletion(res, { content: 'ok' }));
+  const app = await createTestApp();
+  const providerA = app.app.registry.createProvider({ name: 'dead', baseUrl: failing.baseUrl });
+  for (const key of ['k1', 'k2', 'k3', 'k4']) {
+    app.app.registry.addProviderKey(providerA.id, { label: key, key });
+  }
+  const providerB = app.addProvider('stable', healthy.baseUrl);
+  const model = app.app.registry.createModel({ name: 'capped-keys', balanceStrategy: 'cache_aware' });
+  app.app.registry.createRoute({ modelId: model.id, providerId: providerA.id, upstreamModel: 'ua' });
+  app.app.registry.createRoute({ modelId: model.id, providerId: providerB.id, upstreamModel: 'ub' });
+  const { raw } = app.addToken('client', [model.id]);
+  await t.after(async () => {
+    await app.close();
+    await failing.close();
+    await healthy.close();
+  });
+
+  const result = await chat(app.baseUrl, raw, 'capped-keys');
+  assert.equal(result.status, 200, 'request survived a dead key pool');
+  assert.equal(failing.state.requests.length, 2, 'key retries capped per route');
+  assert.equal(healthy.state.requests.length, 1);
+  assert.equal(seenAuth.length, 2);
+});
+
 test('all routes exhausted returns 502', async (t) => {
   const failing = await startStubUpstream((req, res) => jsonCompletion(res, { status: 503 }));
   const app = await createTestApp();

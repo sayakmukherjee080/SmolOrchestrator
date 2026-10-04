@@ -412,6 +412,7 @@ textarea { min-height: 80px; resize: vertical; font-family: var(--mono); font-si
 .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .inline-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.key-chip { gap: 4px; }
 .stack { display: grid; gap: 14px; }
 .row { display: flex; align-items: center; gap: 8px; }
 .row.wrap { flex-wrap: wrap; }

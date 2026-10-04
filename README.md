@@ -116,6 +116,7 @@ SmolOrchestrator runs anywhere Node runs: a $5 VPS, a home server, a container, 
     cloudflared tunnel --url http://127.0.0.1:8787
     ```
     The tunnel is external infrastructure; the gateway itself needs no Cloudflare configuration.
+    When using it, set `TRUST_PROXY=true` in `.env` so client IPs come from `CF-Connecting-IP`.
 
 ---
 
@@ -155,12 +156,12 @@ Responses carry helpful headers: `X-Smolorchestrator-Provider`, `X-Cache` (`hit`
 
 Login at `/admin` to:
 
+*   Manage **Providers** — OpenAI-compatible endpoints with rotating key pools; add/toggle/delete keys and verify reachability.
 *   Create **Models** (e.g., `ds-v4.1-flash`) and attach provider routes with upstream model IDs, per-million prices, capability flags, context limits, and optional daily caps.
-*   Map **Providers** (OpenRouter, Gemini, NIM, …) with key pools.
 *   Generate **Gateway Keys**, scope them to models, and set request/spend budgets.
 *   Watch **Usage** — requests, tokens, cached-token savings, response-cache hit rate, and p50/p95 latency.
 *   Read **Logs** — attempt-level telemetry with zero content capture.
-*   Tune **Settings** — backoff, probes, health checks, cache, budgets, backups, and config transfer.
+*   Tune **Settings** — routing/probes, gateway limits (attempts, timeouts, key policy, body caps), security (proxy trust, rate limits, login lockout, session TTL, metrics token), cache caps, retention, budgets, backups, and config transfer. Runtime knobs apply instantly; timer intervals are labelled "restart".
 
 ---
 
@@ -170,6 +171,8 @@ Login at `/admin` to:
 *   `GET /health/ready` — readiness (database reachable).
 *   `GET /metrics` — Prometheus text metrics; set `METRICS_TOKEN` to require a bearer token.
 *   Backups are plain SQLite snapshots (`BACKUP_*` settings) created on schedule or on demand.
+*   Retention maintenance prunes telemetry and usage on schedule (`TELEMETRY_RETENTION_DAYS`, `USAGE_RETENTION_DAYS`; `0` = keep forever). Audit rows are never pruned.
+*   Behind a reverse proxy or tunnel set `TRUST_PROXY=true` so rate limiting and login lockouts key off `CF-Connecting-IP` / `X-Forwarded-For`.
 *   Every configuration variable is documented in [`.env.example`](.env.example).
 
 ---
@@ -184,7 +187,7 @@ The Postman collection at [`postman/smolorchestrator.postman_collection.json`](p
 npm test
 ```
 
-Covers migrations, authentication and model scoping, balancing strategies, cache-aware pinning, failover and cooldowns, probes and health checks, response cache and singleflight, usage extraction (streaming, non-streaming, estimation), cached-token savings, budgets and quotas, capability routing, byte transparency, client-disconnect propagation, backups, config import/export, admin API security, and the hot-path selection budget.
+Covers migrations, authentication and model scoping, balancing strategies, cache-aware pinning, failover and cooldowns, key-retry caps, probes and health checks, response cache and singleflight, usage extraction (streaming, non-streaming, estimation), cached-token savings, budgets and quotas, capability routing, byte transparency, header stripping, client-disconnect propagation, retention maintenance, backups, config import/export, admin API security, and the hot-path selection budget.
 
 ---
 

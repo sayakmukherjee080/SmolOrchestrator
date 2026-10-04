@@ -50,8 +50,9 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
   const limiter = new IpRateLimiter({ limit: config.ipRateLimit, windowMs: config.ipRateWindowMs });
   const pins = new PinStore();
   const responseCache = new ResponseCache({
-    maxEntries: config.responseCacheMaxEntries,
-    maxBodyBytes: config.responseCacheMaxBodyBytes,
+    maxEntries: () => registry.setting('response_cache_max_entries', config.responseCacheMaxEntries),
+    maxBodyBytes: () => registry.setting('response_cache_max_body_bytes', config.responseCacheMaxBodyBytes),
+    maxTotalBytes: () => registry.setting('response_cache_max_total_bytes', config.responseCacheMaxTotalBytes),
   });
   const singleFlight = new SingleFlight();
 
@@ -88,9 +89,9 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
   }
 
   // Finalises a streaming attempt result with client headers.
-  function finishResult(result, budgetReport) {
+  function finishResult(result, budgetReport, cacheStatus = 'miss') {
     if (!result || !result.response) return result?.response;
-    if (!result.response.headers.has('x-cache')) result.response.headers.set('x-cache', 'miss');
+    if (!result.response.headers.has('x-cache')) result.response.headers.set('x-cache', cacheStatus);
     applyBudgetHeaders(result.response.headers, budgetReport);
     return result.response;
   }
@@ -104,8 +105,10 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
 
   // Handles POST /v1/chat/completions, /v1/embeddings, /v1/images/generations, and generic JSON paths.
   async function handleProxy(request, subPath) {
-    const ip = clientIp(request, config.trustProxy);
-    if (!limiter.allow(ip)) {
+    const ip = clientIp(request, registry.setting('trust_proxy', config.trustProxy));
+    const rateLimit = registry.setting('ip_rate_limit', config.ipRateLimit);
+    const rateWindow = registry.setting('ip_rate_window_ms', config.ipRateWindowMs);
+    if (!limiter.allow(ip, Date.now(), rateLimit, rateWindow)) {
       return openAiError('Rate limit exceeded', 'rate_limit_exceeded', 429, 'rate_limit_error');
     }
     const auth = authenticate(request, registry);
@@ -123,7 +126,7 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
 
     let rawBody;
     try {
-      rawBody = await readBodyCapped(request.body, config.maxBodyBytes);
+      rawBody = await readBodyCapped(request.body, registry.setting('max_body_bytes', config.maxBodyBytes));
     } catch (error) {
       if (error.code === 'PAYLOAD_TOO_LARGE') {
         const response = openAiError('Request body too large', 'payload_too_large', 413);
@@ -176,24 +179,29 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
     });
 
     const cacheEligible = cacheEnabledFor(model) && !streaming && payload.temperature === 0;
-    if (cacheEligible) {
-      const cacheKey = requestCacheKey(model.id, payload);
+    const cacheKey = cacheEligible ? requestCacheKey(model.id, payload) : null;
+    const budgetRatio = () => registry.setting('budget_warn_ratio', config.budgetWarnRatio);
+    if (cacheKey) {
       const hit = responseCache.get(cacheKey);
       if (hit) {
+        registry.incrementTokenUsage(token.id, 0, Date.now());
         metrics?.recordCache({ model: model.name, outcome: 'hit', savedCost: hit.cost });
         telemetry.queue({
           type: 'cache', ts: Date.now(), modelId: model.id, outcome: 'hit',
           savedCost: hit.cost, savedTokensIn: hit.inputTokens, savedTokensOut: hit.outputTokens,
         });
-        return cacheResponse(hit, budgetReport);
+        return cacheResponse(hit, registry.tokenBudgetReport(token, budgetRatio()));
       }
       const { shared, result } = await singleFlight.run(cacheKey, () => runAttempts(true));
       if (result.capture) {
         if (!shared) {
           responseCache.set(cacheKey, {
             ...result.capture,
+            modelId: model.id,
             expiresAt: Date.now() + registry.setting('response_cache_ttl_ms', config.responseCacheTtlMs),
           });
+        } else {
+          registry.incrementTokenUsage(token.id, 0, Date.now());
         }
         metrics?.recordCache({ model: model.name, outcome: shared ? 'coalesced' : 'miss', savedCost: shared ? result.capture.cost : 0 });
         telemetry.queue({
@@ -202,22 +210,29 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
           savedTokensIn: shared ? result.capture.inputTokens : 0,
           savedTokensOut: shared ? result.capture.outputTokens : 0,
         });
-        return captureResponse(result.capture, budgetReport, shared ? 'coalesced' : 'miss');
+        return captureResponse(result.capture, registry.tokenBudgetReport(token, budgetRatio()), shared ? 'coalesced' : 'miss');
       }
-      if (shared) return finishResult(await runAttempts(false), budgetReport);
-      return finishResult(result, budgetReport);
+      if (shared) {
+        metrics?.recordCache({ model: model.name, outcome: 'miss' });
+        telemetry.queue({ type: 'cache', ts: Date.now(), modelId: model.id, outcome: 'miss' });
+        return finishResult(await runAttempts(false), budgetReport, 'miss');
+      }
+      return finishResult(result, budgetReport, 'miss');
     }
 
-    return finishResult(await runAttempts(false), budgetReport);
+    return finishResult(await runAttempts(false), budgetReport, cacheKey ? 'miss' : 'bypass');
   }
 
   // Runs the route selection and failover loop for one client request.
   async function attemptLoop({ request, token, model, payload, subPath, requirements, capture }) {
     const excluded = new Set();
+    const keyFailures = new Map();
     const errors = [];
     const cacheAware = model.balanceStrategy === 'cache_aware';
+    const maxAttempts = registry.setting('max_attempts', config.maxAttempts);
+    const keyRetries = registry.setting('key_retries_per_route', config.keyRetriesPerRoute);
     let attempt = 0;
-    while (attempt < config.maxAttempts) {
+    while (attempt < maxAttempts) {
       const now = Date.now();
       let route;
       let key;
@@ -239,7 +254,17 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
       }
       attempt += 1;
       const provider = registry.providerById(route.providerId);
-      const result = await attemptRoute({ request, route, provider, key, payload, subPath, token, model, attempt, capture });
+      let result;
+      try {
+        result = await attemptRoute({ request, route, provider, key, payload, subPath, token, model, attempt, capture });
+      } catch (error) {
+        if (request.signal.aborted) {
+          metrics?.recordAttempt({ model: model.name, provider: provider.name, outcome: 'client_closed' });
+          return { response: openAiError('Client closed request', 'client_closed_request', 499) };
+        }
+        logger.warn('attempt threw', { routeId: route.id, error: error.message });
+        result = { outcome: 'failure', status: 0, error: error.message, latencyMs: 0 };
+      }
       if (result.outcome === 'client_closed') {
         metrics?.recordAttempt({ model: model.name, provider: provider.name, outcome: 'client_closed' });
         return { response: openAiError('Client closed request', 'client_closed_request', 499) };
@@ -252,7 +277,9 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
       metrics?.recordAttempt({ model: model.name, provider: provider.name, outcome: 'failure' });
       if (cacheAware) pins.delete(token.id, model.id);
       if (result.keyFailed) {
-        excluded.delete(route.id);
+        const failures = (keyFailures.get(route.id) || 0) + 1;
+        keyFailures.set(route.id, failures);
+        if (failures >= keyRetries) excluded.add(route.id);
       } else {
         const delay = applyFailure(route, {
           now: Date.now(),
@@ -280,7 +307,7 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
     const onClientAbort = () => controller.abort(new Error('client_aborted'));
     if (request.signal.aborted) onClientAbort();
     else request.signal.addEventListener('abort', onClientAbort, { once: true });
-    const watchdog = createIdleWatchdog(config.idleTimeoutMs, () => controller.abort(new Error('upstream_idle_timeout')));
+    const watchdog = createIdleWatchdog(registry.setting('idle_timeout_ms', config.idleTimeoutMs), () => controller.abort(new Error('upstream_idle_timeout')));
     watchdog.touch();
     const started = Date.now();
     let upstream;
@@ -302,7 +329,7 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
     if (AUTH_STATUSES.has(upstream.status)) {
       watchdog.stop();
       request.signal.removeEventListener('abort', onClientAbort);
-      disableKey(key, Date.now(), config.keyDisableMs);
+      disableKey(key, Date.now(), registry.setting('key_disable_ms', config.keyDisableMs));
       await upstream.body?.cancel().catch(() => {});
       return { outcome: 'failure', keyFailed: true, status: upstream.status, error: `upstream auth error ${upstream.status}`, latencyMs };
     }
@@ -327,17 +354,19 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
     const now = Date.now();
     const mode = extractorMode(upstream.headers.get('content-type'));
     const requestBytes = Number(request.headers.get('content-length')) || 0;
+    const parseMax = registry.setting('usage_parse_max_bytes', config.usageParseMaxBytes);
     const release = () => {
       watchdog.stop();
       request.signal.removeEventListener('abort', onClientAbort);
     };
     const lengthHeader = Number(upstream.headers.get('content-length'));
     const canCapture = capture && countUsage && mode === 'json'
-      && Number.isFinite(lengthHeader) && lengthHeader <= config.responseCacheMaxBodyBytes;
+      && Number.isFinite(lengthHeader)
+      && lengthHeader <= registry.setting('response_cache_max_body_bytes', config.responseCacheMaxBodyBytes);
 
     if (canCapture && upstream.body) {
       const reader = upstream.body.getReader();
-      const extractor = createUsageExtractor({ mode, maxBytes: config.usageParseMaxBytes });
+      const extractor = createUsageExtractor({ mode, maxBytes: parseMax });
       const chunks = [];
       try {
         for (;;) {
@@ -377,7 +406,7 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
     let body = null;
     if (upstream.body) {
       const [clientStream, parseStream] = upstream.body.tee();
-      const extractor = createUsageExtractor({ mode, maxBytes: config.usageParseMaxBytes });
+      const extractor = createUsageExtractor({ mode, maxBytes: parseMax });
       let responseBytes = 0;
       void (async () => {
         const reader = parseStream.getReader();
@@ -451,12 +480,12 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
         },
         body: JSON.stringify({
           model: route.upstreamModel,
-          messages: [{ role: 'user', content: config.probePrompt }],
-          max_tokens: config.probeMaxTokens,
+          messages: [{ role: 'user', content: registry.setting('probe_prompt', config.probePrompt) }],
+          max_tokens: registry.setting('probe_max_tokens', config.probeMaxTokens),
           temperature: 0,
           stream: false,
         }),
-        signal: AbortSignal.timeout(config.idleTimeoutMs),
+        signal: AbortSignal.timeout(registry.setting('idle_timeout_ms', config.idleTimeoutMs)),
       });
       const latencyMs = Date.now() - started;
       const text = await response.text().catch(() => '');

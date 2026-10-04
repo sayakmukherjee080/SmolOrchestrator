@@ -1,6 +1,7 @@
 // In-memory routing registry: authoritative hot-path state, kept in sync with SQLite.
 import { decryptSecret } from '../util/crypto.js';
 import { dayWindow, monthWindow } from './windows.js';
+import { ValidationError } from './validate.js';
 import * as modelStore from './models.js';
 import * as providerStore from './providers.js';
 import * as tokenStore from './tokens.js';
@@ -340,6 +341,14 @@ export class Registry {
     return routes;
   }
 
+  // Re-marks routes as dirty after a failed flush so state is not lost.
+  restoreDirtyRoutes(snapshots) {
+    for (const snapshot of snapshots) {
+      const route = this.routeById.get(snapshot.id);
+      if (route) this.dirtyRoutes.set(route.id, route);
+    }
+  }
+
   // Returns and advances a rotation pointer for a given scope key.
   nextRotationIndex(scope, size) {
     if (size <= 0) return 0;
@@ -376,6 +385,7 @@ export class Registry {
   // Persists and caches a runtime setting.
   setSetting(key, value) {
     const name = String(key ?? '').trim();
+    if (!name) throw new ValidationError('setting key is required');
     this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
       .run(name, JSON.stringify(value));
     this.settings.set(name, value);

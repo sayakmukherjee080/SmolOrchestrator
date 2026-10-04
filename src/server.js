@@ -8,9 +8,10 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadConfig, loadEnvFile } from './util/config.js';
 import { createLogger } from './util/log.js';
-import { openDatabase } from './store/db.js';
+import { openDatabase, runMigrations } from './store/db.js';
 import { Registry } from './store/load.js';
 import { createBackupManager } from './store/backup.js';
+import { createMaintenanceManager } from './store/maintenance.js';
 import { Telemetry } from './gateway/telemetry.js';
 import { createGateway } from './gateway/forward.js';
 import { createProbeScheduler } from './gateway/probe.js';
@@ -36,11 +37,12 @@ export function createApp({ config, db, logger }) {
   });
   probe = createProbeScheduler({ registry, config, logger, runProbe: gateway.runProbe });
   const session = createSessionManager({ registry, config, logger });
-  const backups = createBackupManager({ db, config, logger });
-  const adminApi = createAdminApi({ registry, session, config, logger, backups });
+  const backups = createBackupManager({ db, registry, config, logger });
+  const maintenance = createMaintenanceManager({ db, registry, config, logger });
+  const adminApi = createAdminApi({ registry, session, config, logger, backups, gateway });
   const staticServer = createStaticServer({ webRoot: path.join(ROOT, 'web') });
   const handle = createRouter({ gateway, adminApi, staticServer, db, metrics, registry, config });
-  return { handle, registry, telemetry, probe, gateway, session, metrics, backups, db };
+  return { handle, registry, telemetry, probe, gateway, session, metrics, backups, maintenance, db };
 }
 
 // Applies baseline security headers, adding a CSP for admin UI responses.
@@ -146,6 +148,14 @@ async function main() {
   }
   const logger = createLogger(config);
   const db = openDatabase(config.dbPath);
+  try {
+    const applied = runMigrations(db, path.join(ROOT, 'migrations'), logger);
+    if (applied > 0) logger.info('migrations applied', { count: applied });
+  } catch (error) {
+    logger.error('migration failed', { error: error.message });
+    db.close();
+    process.exit(1);
+  }
   let app;
   try {
     app = createApp({ config, db, logger });
@@ -157,6 +167,7 @@ async function main() {
   app.telemetry.start();
   app.probe.start();
   app.backups.start();
+  app.maintenance.start();
   const server = createHttpServer(app, config, logger);
   server.listen(config.port, config.host, () => {
     logger.info('server listening', { host: config.host, port: config.port });
@@ -182,6 +193,7 @@ async function main() {
       finished = true;
       app.probe.stop();
       app.backups.stop();
+      app.maintenance.stop();
       await app.telemetry.stop();
       try { db.close(); } catch { /* already closed */ }
       logger.info('shutdown complete', { code });

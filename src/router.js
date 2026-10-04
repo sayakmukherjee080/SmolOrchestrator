@@ -1,5 +1,5 @@
 // Top-level request router: health, gateway API, admin API, and static UI.
-import { envelopeError } from './util/body.js';
+import { envelopeError, openAiError } from './util/body.js';
 
 // Builds the router bound to all application subsystems.
 export function createRouter({ gateway, adminApi, staticServer, db, metrics, registry, config }) {
@@ -19,9 +19,10 @@ export function createRouter({ gateway, adminApi, staticServer, db, metrics, reg
       }
     }
     if (pathname === '/metrics' && method === 'GET') {
-      if (config.metricsToken) {
+      const metricsToken = registry.setting('metrics_token', config.metricsToken);
+      if (metricsToken) {
         const auth = request.headers.get('authorization') || '';
-        if (auth !== `Bearer ${config.metricsToken}`) {
+        if (auth !== `Bearer ${metricsToken}`) {
           return envelopeError('Unauthorized', 'unauthorized', 401);
         }
       }
@@ -38,8 +39,12 @@ export function createRouter({ gateway, adminApi, staticServer, db, metrics, reg
     if (pathname === '/api/v1' || pathname.startsWith('/api/v1/')) {
       return adminApi.handle(request, url);
     }
+    if (pathname.startsWith('/v1/')) {
+      return openAiError('Not found', 'not_found', 404, 'invalid_request_error');
+    }
     if (pathname === '/') {
-      return Response.redirect(new URL('/admin', url).toString(), 302);
+      // Built manually because Response.redirect() headers are immutable and security headers are added later.
+      return new Response(null, { status: 302, headers: { location: '/admin' } });
     }
     if (pathname === '/admin' || pathname.startsWith('/admin/')) {
       return staticServer.serve(pathname);

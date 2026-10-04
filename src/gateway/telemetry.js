@@ -48,6 +48,11 @@ export class Telemetry {
         saved_tokens_out = saved_tokens_out + excluded.saved_tokens_out`);
   }
 
+  // Returns the configured telemetry buffer ceiling.
+  bufferLimit() {
+    return this.registry.setting('telemetry_buffer_max', this.config.telemetryBufferMax);
+  }
+
   // Queues a telemetry event, cache stat, audit row, or flushes early when full.
   queue(record) {
     if (record.type === 'audit') {
@@ -57,15 +62,16 @@ export class Telemetry {
     } else if (record.type === 'event') {
       this.events.push(record);
     }
-    if (this.events.length + this.audits.length + this.cacheEvents.length >= this.config.telemetryBufferMax) {
+    if (this.events.length + this.audits.length + this.cacheEvents.length >= this.bufferLimit()) {
       void this.flush();
     }
   }
 
-  // Starts the periodic flush timer.
+  // Starts the periodic flush timer, honouring the stored interval override.
   start() {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.flush(), this.config.telemetryFlushMs);
+    const interval = this.registry.setting('telemetry_flush_ms', this.config.telemetryFlushMs);
+    this.timer = setInterval(() => void this.flush(), interval);
     this.timer.unref();
   }
 
@@ -136,7 +142,8 @@ export class Telemetry {
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch { /* transaction already closed */ }
       this.logger?.error('telemetry flush failed', { error: error.message });
-      if (this.events.length + events.length < this.config.telemetryBufferMax) {
+      this.registry.restoreDirtyRoutes?.(routes);
+      if (this.events.length + events.length < this.bufferLimit()) {
         this.events.unshift(...events);
         this.audits.unshift(...audits);
         this.cacheEvents.unshift(...cacheEvents);

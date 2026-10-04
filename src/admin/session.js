@@ -21,9 +21,10 @@ export function createSessionManager({ registry, config, logger }) {
 
   // Returns true while the IP is locked out from login attempts.
   function locked(ip, now) {
-    const hits = (failures.get(ip) || []).filter((ts) => ts > now - config.loginLockoutMs);
+    const lockoutMs = registry.setting('login_lockout_ms', config.loginLockoutMs);
+    const hits = (failures.get(ip) || []).filter((ts) => ts > now - lockoutMs);
     failures.set(ip, hits);
-    return hits.length >= config.loginMaxAttempts;
+    return hits.length >= registry.setting('login_max_attempts', config.loginMaxAttempts);
   }
 
   // Records a failed login attempt for an IP.
@@ -40,7 +41,7 @@ export function createSessionManager({ registry, config, logger }) {
 
   // Builds the Set-Cookie value for a signed session token.
   function cookieValue(signed, maxAgeSeconds) {
-    const secure = config.cookieSecure ? '; Secure' : '';
+    const secure = registry.setting('cookie_secure', config.cookieSecure) ? '; Secure' : '';
     return `${COOKIE_NAME}=${signed}; HttpOnly; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secure}`;
   }
 
@@ -61,10 +62,11 @@ export function createSessionManager({ registry, config, logger }) {
       return { ok: false, status: 401, message: 'Invalid credentials' };
     }
     const csrf = randomTokenHex(16);
-    const payload = Buffer.from(JSON.stringify({ sub: user.id, email: user.email, exp: now + config.sessionTtlMs, csrf })).toString('base64url');
+    const sessionTtlMs = registry.setting('session_ttl_ms', config.sessionTtlMs);
+    const payload = Buffer.from(JSON.stringify({ sub: user.id, email: user.email, exp: now + sessionTtlMs, csrf })).toString('base64url');
     const signed = signValue(payload, config.appSecret);
     registry.queueAudit({ action: 'login', outcome: 'success', ip, actor: user.email });
-    return { ok: true, cookie: cookieValue(signed, Math.floor(config.sessionTtlMs / 1000)), email: user.email, csrf };
+    return { ok: true, cookie: cookieValue(signed, Math.floor(sessionTtlMs / 1000)), email: user.email, csrf };
   }
 
   // Returns the verified session payload, or null.
@@ -99,7 +101,7 @@ export function createSessionManager({ registry, config, logger }) {
 
   // Returns the cookie value that clears the session.
   function clearingCookie() {
-    const secure = config.cookieSecure ? '; Secure' : '';
+    const secure = registry.setting('cookie_secure', config.cookieSecure) ? '; Secure' : '';
     return `${COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${secure}`;
   }
 

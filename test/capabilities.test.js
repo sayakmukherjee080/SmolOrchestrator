@@ -101,7 +101,7 @@ test('preflight rejects malformed payloads before upstream spend', async (t) => 
   assert.equal(badTools.status, 400);
   const badMax = await chat(app.baseUrl, raw, { model: 'validated', messages: [], max_tokens: 0 });
   assert.equal(badMax.status, 400);
-  const badToolShape = await chat(app.baseUrl, raw, { model: 'validated', messages: [], tools: [{ type: 'function' }] });
-  assert.equal(badToolShape.status, 400);
-  assert.equal(upstream.state.requests.length, 0);
+  const legacyShape = await chat(app.baseUrl, raw, { model: 'validated', messages: [], tools: [{ type: 'function' }] });
+  assert.equal(legacyShape.status, 200, 'non-function tool entries pass through instead of hard-failing');
+  assert.equal(upstream.state.requests.length, 1);
 });

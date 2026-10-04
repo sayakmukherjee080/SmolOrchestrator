@@ -15,6 +15,11 @@ test('health endpoints report liveness and readiness', async (t) => {
   const ready = await fetch(`${app.baseUrl}/health/ready`);
   assert.equal(ready.status, 200);
   assert.equal((await ready.json()).status, 'ready');
+
+  const root = await fetch(`${app.baseUrl}/`, { redirect: 'manual' });
+  assert.equal(root.status, 302, 'root redirects to the admin UI');
+  assert.equal(root.headers.get('location'), '/admin');
+  assert.equal(root.headers.get('x-content-type-options'), 'nosniff', 'security headers survive the redirect');
 });
 
 test('gateway validation and unknown routes', async (t) => {
@@ -70,5 +75,6 @@ test('gateway validation and unknown routes', async (t) => {
   await t.test('unknown v1 GET returns 404', async () => {
     const response = await fetch(`${app.baseUrl}/v1/unknown`);
     assert.equal(response.status, 404);
+    assert.equal((await response.json()).error.code, 'not_found');
   });
 });

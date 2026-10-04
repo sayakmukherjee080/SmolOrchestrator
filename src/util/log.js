@@ -8,13 +8,21 @@ const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
 export function createLogger(config) {
   fs.mkdirSync(config.logPath, { recursive: true });
   const state = { level: LEVELS[config.logLevel] ?? LEVELS.info };
+  const sizes = new Map();
 
   // Appends one JSON line to a file, rotating when the size cap is reached.
   function writeLine(fileName, record) {
     const file = path.join(config.logPath, fileName);
     try {
-      const size = fs.existsSync(file) ? fs.statSync(file).size : 0;
-      if (size + record.length > config.logMaxBytes) rotate(file, config.logKeep);
+      let size = sizes.get(file);
+      if (size === undefined) {
+        size = fs.existsSync(file) ? fs.statSync(file).size : 0;
+      }
+      if (size + record.length > config.logMaxBytes) {
+        rotate(file, config.logKeep);
+        size = 0;
+      }
+      sizes.set(file, size + record.length + 1);
       fs.appendFile(file, `${record}\n`, () => {});
     } catch {
       // Logging must never break request handling.

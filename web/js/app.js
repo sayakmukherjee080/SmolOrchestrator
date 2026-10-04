@@ -3,12 +3,13 @@ import { api, setCsrf } from './api.js';
 import { initTheme, toggleTheme, watchSystemTheme } from './theme.js';
 import { showSkeleton, toast } from './ui.js';
 import * as models from './sections/models.js';
+import * as providers from './sections/providers.js';
 import * as tokens from './sections/tokens.js';
 import * as usage from './sections/usage.js';
 import * as logs from './sections/logs.js';
 import * as settings from './sections/settings.js';
 
-const SECTIONS = { models, tokens, usage, logs, settings };
+const SECTIONS = { models, providers, tokens, usage, logs, settings };
 let sectionController = null;
 
 // Shows the login view and hides the app shell.
