@@ -45,14 +45,14 @@ export function updateModel(registry, id, patch) {
   return model;
 }
 
-// Soft-deletes a model and its routes.
+// Soft-deletes a model and its routes, tombstoning the name so it can be reused.
 export function softDeleteModel(registry, id) {
   const model = requireModel(registry, id);
   const now = Date.now();
   registry.db.exec('BEGIN IMMEDIATE');
   try {
     registry.db.prepare('UPDATE routes SET deleted_at = ? WHERE model_id = ? AND deleted_at IS NULL').run(now, id);
-    registry.db.prepare('UPDATE models SET deleted_at = ? WHERE id = ?').run(now, id);
+    registry.db.prepare("UPDATE models SET deleted_at = ?, name = name || ' [deleted ' || id || ']' WHERE id = ?").run(now, id);
     registry.db.exec('COMMIT');
   } catch (error) {
     registry.db.exec('ROLLBACK');

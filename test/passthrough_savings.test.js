@@ -61,6 +61,9 @@ test('provider cached tokens are recorded with estimated savings', async (t) => 
   assert.ok(Math.abs(row.saved_cost - expectedSaved) < 1e-12, 'savings recorded');
   const usage = app.db.prepare("SELECT * FROM usage WHERE entity = 'model'").get();
   assert.equal(usage.cached_tokens, 60);
+  const report = app.app.registry.usageReport({ entity: 'model' });
+  assert.equal(report[0].cached_tokens, 60, 'usage report exposes cached tokens');
+  assert.ok(report[0].saved_cost > 0, 'usage report exposes saved cost');
 });
 
 test('soft budget warnings surface as client headers', async (t) => {

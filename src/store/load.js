@@ -409,7 +409,8 @@ export class Registry {
     if (windowStart !== null) { clauses.push('window_start = ?'); params.push(Number(windowStart)); }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     return this.db.prepare(
-      `SELECT entity, entity_id, window_start, requests, tokens_in, tokens_out, cost FROM usage ${where} ORDER BY window_start DESC, cost DESC LIMIT 1000`,
+      `SELECT entity, entity_id, window_start, requests, tokens_in, tokens_out, cached_tokens, cost, saved_cost
+       FROM usage ${where} ORDER BY window_start DESC, cost DESC LIMIT 1000`,
     ).all(...params);
   }
 

@@ -53,7 +53,7 @@ export function updateToken(registry, tokenId, patch) {
   return token;
 }
 
-// Soft-deletes a token and removes its scope.
+// Soft-deletes a token, tombstoning its hash so the value can be re-imported later.
 export function softDeleteToken(registry, tokenId) {
   const token = findTokenById(registry, tokenId);
   if (!token) throw new ValidationError('token not found');
@@ -61,7 +61,7 @@ export function softDeleteToken(registry, tokenId) {
   registry.db.exec('BEGIN IMMEDIATE');
   try {
     registry.db.prepare('DELETE FROM token_models WHERE token_id = ?').run(token.id);
-    registry.db.prepare('UPDATE tokens SET deleted_at = ? WHERE id = ?').run(now, token.id);
+    registry.db.prepare("UPDATE tokens SET deleted_at = ?, key_hash = key_hash || ':deleted:' || id WHERE id = ?").run(now, token.id);
     registry.db.exec('COMMIT');
   } catch (error) {
     registry.db.exec('ROLLBACK');

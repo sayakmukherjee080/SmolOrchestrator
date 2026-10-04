@@ -30,7 +30,7 @@ export function updateProvider(registry, id, patch) {
   return provider;
 }
 
-// Soft-deletes a provider together with its keys and routes.
+// Soft-deletes a provider together with its keys and routes, tombstoning the name.
 export function softDeleteProvider(registry, id) {
   requireProvider(registry, id);
   const now = Date.now();
@@ -38,7 +38,7 @@ export function softDeleteProvider(registry, id) {
   try {
     registry.db.prepare('UPDATE routes SET deleted_at = ? WHERE provider_id = ? AND deleted_at IS NULL').run(now, id);
     registry.db.prepare('UPDATE provider_keys SET deleted_at = ? WHERE provider_id = ? AND deleted_at IS NULL').run(now, id);
-    registry.db.prepare('UPDATE providers SET deleted_at = ? WHERE id = ?').run(now, id);
+    registry.db.prepare("UPDATE providers SET deleted_at = ?, name = name || ' [deleted ' || id || ']' WHERE id = ?").run(now, id);
     registry.db.exec('COMMIT');
   } catch (error) {
     registry.db.exec('ROLLBACK');

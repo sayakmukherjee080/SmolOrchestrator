@@ -418,7 +418,10 @@ export function createAdminApi({ registry, session, config, logger, backups, gat
     }
     if (path === '/settings' && method === 'PUT') {
       return mutate(request, { action: 'settings.update', resourceType: 'settings', actor, ip: requestIp },
-        async () => updateSettings(await readJson(request, config, registry)));
+        async () => {
+          updateSettings(await readJson(request, config, registry));
+          return { settings: settingsView(), cacheEntries: gateway.responseCache.size };
+        });
     }
     if (path === '/cache/flush' && method === 'POST') {
       return mutate(request, { action: 'cache.flush', resourceType: 'cache', actor, ip: requestIp },

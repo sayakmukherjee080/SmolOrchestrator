@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestApp, adminLogin, TEST_EMAIL, TEST_PASSWORD } from './helpers/app.js';
+import { sha256Hex } from '../src/util/crypto.js';
 
 // Performs a JSON admin request with optional session credentials.
 function request(baseUrl, path, { method = 'GET', body, cookie, csrf } = {}) {
@@ -114,7 +115,7 @@ test('admin API security and CRUD', async (t) => {
       body: { backoff_base_ms: 30000, probe_enabled: false },
     });
     assert.equal(settings.status, 200);
-    assert.equal((await settings.json()).data.backoff_base_ms, 30000);
+    assert.equal((await settings.json()).data.settings.backoff_base_ms, 30000);
 
     const deleted = await request(app.baseUrl, `/routes/${(await route.json()).data.id}`, {
       method: 'DELETE', cookie: session.cookie, csrf: session.csrf,
@@ -122,6 +123,40 @@ test('admin API security and CRUD', async (t) => {
     assert.equal(deleted.status, 200);
     const after = await request(app.baseUrl, '/models', { cookie: session.cookie });
     assert.equal((await after.json()).data.models[0].routes.length, 0);
+  });
+
+  await t.test('soft-deleted names and hashes can be reused', async () => {
+    const providerName = 'reuse-provider';
+    const created = await request(app.baseUrl, '/providers', {
+      method: 'POST', cookie: session.cookie, csrf: session.csrf,
+      body: { name: providerName, baseUrl: 'http://127.0.0.1:9999/v1' },
+    });
+    assert.equal(created.status, 201);
+    const providerId = (await created.json()).data.id;
+    await request(app.baseUrl, `/providers/${providerId}`, { method: 'DELETE', cookie: session.cookie, csrf: session.csrf });
+    const recreated = await request(app.baseUrl, '/providers', {
+      method: 'POST', cookie: session.cookie, csrf: session.csrf,
+      body: { name: providerName, baseUrl: 'http://127.0.0.1:9999/v1' },
+    });
+    assert.equal(recreated.status, 201, 'provider name is reusable after delete');
+
+    const modelName = 'reuse-model';
+    const model = await request(app.baseUrl, '/models', {
+      method: 'POST', cookie: session.cookie, csrf: session.csrf, body: { name: modelName },
+    });
+    assert.equal(model.status, 201);
+    const modelId = (await model.json()).data.id;
+    await request(app.baseUrl, `/models/${modelId}`, { method: 'DELETE', cookie: session.cookie, csrf: session.csrf });
+    const recreatedModel = await request(app.baseUrl, '/models', {
+      method: 'POST', cookie: session.cookie, csrf: session.csrf, body: { name: modelName },
+    });
+    assert.equal(recreatedModel.status, 201, 'model name is reusable after delete');
+
+    const { token, raw } = app.app.registry.createToken({ label: 'reuse-token' });
+    const hash = sha256Hex(raw);
+    app.app.registry.softDeleteToken(token.id);
+    const imported = app.app.registry.importToken({ keyHash: hash, label: 'reuse-token-2' });
+    assert.equal(imported.keyHash, hash, 'token hash is reusable after delete');
   });
 
   await t.test('oversized body is rejected', async () => {
