@@ -1,6 +1,7 @@
 // Admin JSON API: CRUD for models, providers, keys, routes, tokens, settings, usage.
 import { parseJsonBody, readBodyCapped, envelopeSuccess, envelopeError } from '../util/body.js';
 import { clientIp } from '../util/headers.js';
+import { hashPassword, verifyPassword } from '../util/crypto.js';
 import { ValidationError } from '../store/validate.js';
 import { dayWindow } from '../store/windows.js';
 import { exportBundle, importBundle } from '../store/configBundle.js';
@@ -50,6 +51,7 @@ const MINIMUM_SETTINGS = new Map([
   ['backup_interval_ms', 3600000],
   ['backup_keep', 1],
   ['maintenance_interval_ms', 3600000],
+  ['usage_retention_days', 32],
 ]);
 const RATIO_SETTINGS = new Set(['cached_input_discount', 'budget_warn_ratio']);
 
@@ -222,7 +224,18 @@ export function createAdminApi({ registry, session, config, logger, backups, gat
     const method = request.method.toUpperCase();
 
     if (path === '/session' && method === 'POST') {
-      const body = await readJson(request, config, registry).catch(() => ({}));
+      let body;
+      try {
+        body = await readJson(request, config, registry);
+      } catch (error) {
+        if (error.code === 'BAD_JSON') return envelopeError('Malformed JSON body', 'invalid_json', 400);
+        if (error.code === 'PAYLOAD_TOO_LARGE') {
+          const response = envelopeError('Request body too large', 'payload_too_large', 413);
+          response.headers.set('connection', 'close');
+          return response;
+        }
+        throw error;
+      }
       const ip = clientIp(request, config.trustProxy);
       const result = session.login(body.email, body.password, ip);
       if (!result.ok) return envelopeError(result.message, 'invalid_credentials', result.status);
@@ -248,6 +261,29 @@ export function createAdminApi({ registry, session, config, logger, backups, gat
         status: 200,
         headers: { 'content-type': 'application/json', 'set-cookie': session.clearingCookie() },
       });
+    }
+    if (path === '/session/password' && method === 'PUT') {
+      let body;
+      try {
+        body = await readJson(request, config, registry);
+      } catch (error) {
+        if (error.code === 'BAD_JSON') return envelopeError('Malformed JSON body', 'invalid_json', 400);
+        if (error.code === 'PAYLOAD_TOO_LARGE') return envelopeError('Request body too large', 'payload_too_large', 413);
+        throw error;
+      }
+      const row = registry.db.prepare('SELECT id, password_hash FROM admin ORDER BY id LIMIT 1').get();
+      if (!row || typeof body.currentPassword !== 'string' || !verifyPassword(body.currentPassword, row.password_hash)) {
+        registry.queueAudit({ action: 'password.change', actor, ip: requestIp, outcome: 'failure', details: { reason: 'invalid_current' } });
+        return envelopeError('Current password is incorrect', 'invalid_credentials', 401);
+      }
+      const minLength = Number(process.env.MIN_PASSWORD_LENGTH || 10);
+      if (typeof body.newPassword !== 'string' || body.newPassword.length < minLength) {
+        return envelopeError(`New password must be at least ${minLength} characters`, 'validation_error', 422);
+      }
+      registry.db.prepare('UPDATE admin SET password_hash = ?, password_changed_at = ? WHERE id = ?')
+        .run(hashPassword(body.newPassword), Date.now(), row.id);
+      registry.queueAudit({ action: 'password.change', actor, ip: requestIp, outcome: 'success' });
+      return envelopeSuccess({ changed: true });
     }
 
     if (path === '/models' && method === 'GET') {

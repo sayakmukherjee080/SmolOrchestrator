@@ -193,3 +193,57 @@ test('login lockout ignores spoofed proxy headers when TRUST_PROXY is off', asyn
   });
   assert.equal(locked.status, 429, 'lockout keyed to the real peer, not the header');
 });
+
+test('login body parse errors map to 400 instead of 401', async (t) => {
+  const app = await createTestApp();
+  await t.after(() => app.close());
+
+  const response = await fetch(`${app.baseUrl}/api/v1/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{bad',
+  });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).code, 'invalid_json');
+});
+
+test('password change verifies current, applies, and invalidates sessions', async (t) => {
+  const app = await createTestApp();
+  const first = await adminLogin(app.baseUrl);
+  await t.after(() => app.close());
+
+  const wrong = await request(app.baseUrl, '/session/password', {
+    method: 'PUT', cookie: first.cookie, csrf: first.csrf,
+    body: { currentPassword: 'wrong-password', newPassword: 'new-password-123' },
+  });
+  assert.equal(wrong.status, 401, 'wrong current password rejected');
+
+  const short = await request(app.baseUrl, '/session/password', {
+    method: 'PUT', cookie: first.cookie, csrf: first.csrf,
+    body: { currentPassword: TEST_PASSWORD, newPassword: 'short' },
+  });
+  assert.equal(short.status, 422, 'short new password rejected');
+
+  const changed = await request(app.baseUrl, '/session/password', {
+    method: 'PUT', cookie: first.cookie, csrf: first.csrf,
+    body: { currentPassword: TEST_PASSWORD, newPassword: 'new-password-123' },
+  });
+  assert.equal(changed.status, 200);
+
+  const stale = await request(app.baseUrl, '/session', { cookie: first.cookie });
+  assert.equal(stale.status, 401, 'old session invalidated immediately');
+
+  const oldLogin = await fetch(`${app.baseUrl}/api/v1/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: TEST_EMAIL, password: TEST_PASSWORD }),
+  });
+  assert.equal(oldLogin.status, 401, 'old password no longer works');
+
+  const newLogin = await fetch(`${app.baseUrl}/api/v1/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: TEST_EMAIL, password: 'new-password-123' }),
+  });
+  assert.equal(newLogin.status, 200, 'new password works');
+});

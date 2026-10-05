@@ -120,6 +120,23 @@ export async function render(main, signal) {
     </div>
 
     <div class="card mt">
+      <div class="page-head"><div><h2>Account</h2><p>Rotating the password invalidates all existing admin sessions.</p></div></div>
+      <div class="stack">
+        <div class="form-grid">
+          <label class="field"><span>Current password</span>
+            <input id="current-password" type="password" autocomplete="current-password">
+          </label>
+          <label class="field"><span>New password (min 10)</span>
+            <input id="new-password" type="password" autocomplete="new-password">
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" id="change-password" type="button">Change password</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt">
       <div class="page-head"><div><h2>Cache &amp; retention</h2><p>Exact response cache sizes, savings estimate, and data windows.</p></div></div>
       <form id="form-cache" class="stack">
         <div class="form-grid">
@@ -144,8 +161,8 @@ export async function render(main, signal) {
           <label class="field"><span>Telemetry retention (days, 0=forever)</span>
             <input name="telemetry_retention_days" type="number" min="0" value="${escapeHtml(settings.telemetry_retention_days)}">
           </label>
-          <label class="field"><span>Usage retention (days, 0=forever)</span>
-            <input name="usage_retention_days" type="number" min="0" value="${escapeHtml(settings.usage_retention_days)}">
+          <label class="field"><span>Usage retention (days, min 32)</span>
+            <input name="usage_retention_days" type="number" min="32" value="${escapeHtml(settings.usage_retention_days)}">
           </label>
         </div>
         <label class="switch">
@@ -281,6 +298,25 @@ export async function render(main, signal) {
     backup_keep: num(form, 'backup_keep'),
     maintenance_interval_ms: num(form, 'maintenance_interval_ms'),
   }));
+
+  document.getElementById('change-password').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await api('/session/password', {
+        method: 'PUT',
+        body: {
+          currentPassword: document.getElementById('current-password').value,
+          newPassword: document.getElementById('new-password').value,
+        },
+      });
+      toast('Password changed. Sign in again.', 'success');
+      setTimeout(() => location.reload(), 900);
+    } catch (error) {
+      toast(error.message, 'error');
+      button.disabled = false;
+    }
+  }, { signal });
 
   document.getElementById('flush-cache').addEventListener('click', async (event) => {
     const button = event.currentTarget;

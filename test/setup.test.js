@@ -73,3 +73,30 @@ test('reader close detaches and pauses stdin so the process can exit', () => {
   assert.equal(input.listenerCount('data'), 0);
   assert.equal(input.isPaused(), true);
 });
+
+test('reader rejects a pending prompt when stdin ends without a line', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const reader = createPromptReader({ input, output });
+  try {
+    const pending = reader.ask({ prompt: 'never: ' });
+    input.end();
+    await assert.rejects(pending, /Aborted/);
+  } finally {
+    reader.close();
+  }
+});
+
+test('reader delivers a trailing line before end', async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const reader = createPromptReader({ input, output });
+  try {
+    const pending = reader.ask({ prompt: 'last: ' });
+    input.write('tail');
+    input.end();
+    assert.equal(await pending, 'tail');
+  } finally {
+    reader.close();
+  }
+});

@@ -78,3 +78,35 @@ test('config bundles export and merge-import into a fresh instance', async (t) =
   assert.equal(second.created.models, 0, 'duplicate import is a no-op');
   assert.equal(second.skipped.models, 1);
 });
+
+test('config import merges new routes into an existing model', async (t) => {
+  const source = await createTestApp();
+  const sourceSession = await adminLogin(source.baseUrl);
+  const provider = source.addProvider('openrouter', 'https://openrouter.ai/api/v1');
+  const model = source.app.registry.createModel({ name: 'merge-model' });
+  source.app.registry.createRoute({ modelId: model.id, providerId: provider.id, upstreamModel: 'deepseek/v4' });
+  const exported = await request(source.baseUrl, '/config/export', { cookie: sourceSession.cookie });
+  const bundle = (await exported.json()).data.bundle;
+
+  const target = await createTestApp();
+  const targetSession = await adminLogin(target.baseUrl);
+  await t.after(async () => {
+    await source.close();
+    await target.close();
+  });
+
+  await request(target.baseUrl, '/config/import', {
+    method: 'POST', cookie: targetSession.cookie, csrf: targetSession.csrf, body: { bundle },
+  });
+  bundle.models[0].routes.push({ provider: 'openrouter', upstreamModel: 'deepseek/v4.1' });
+  const merged = await request(target.baseUrl, '/config/import', {
+    method: 'POST', cookie: targetSession.cookie, csrf: targetSession.csrf, body: { bundle },
+  });
+  const report = (await merged.json()).data;
+  assert.equal(report.created.routes, 1, 'new route merged into the existing model');
+  assert.equal(report.skipped.models, 1);
+
+  const models = await request(target.baseUrl, '/models', { cookie: targetSession.cookie });
+  const routes = (await models.json()).data.models.find((item) => item.name === 'merge-model').routes;
+  assert.equal(routes.length, 2, 'existing route kept, new route added');
+});

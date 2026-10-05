@@ -58,6 +58,7 @@ export async function render(main, signal) {
         <h2>Usage</h2>
         <p>Requests, tokens, cache savings, and latency. Content is never captured.</p>
       </div>
+      <button class="btn ghost" id="refresh-usage" type="button">Refresh</button>
     </div>
     <div class="kpis">
       <div class="kpi"><div class="label">Requests</div><div class="value">${fmtNum(totals.requests)}</div></div>
@@ -116,4 +117,6 @@ export async function render(main, signal) {
           </tr>`).join('')}</tbody>
       </table></div>` : '<p class="muted">No completed requests in the last 24 hours.</p>'}
     </div>`;
+
+  document.getElementById('refresh-usage').addEventListener('click', () => render(main, signal), { signal });
 }

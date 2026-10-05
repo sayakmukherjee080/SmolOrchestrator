@@ -1,5 +1,5 @@
 // Scheduled retention maintenance for telemetry and usage tables.
-import { dayWindow } from './windows.js';
+import { dayWindow, monthWindow } from './windows.js';
 
 const DAY_MS = 86400000;
 
@@ -18,8 +18,10 @@ export function createMaintenanceManager({ db, registry, config, logger }) {
         .run(now - telemetryDays * DAY_MS).changes);
     }
     if (usageDays > 0) {
+      // Never prune the current month: token monthly budgets rebuild from these rows.
+      const cutoff = Math.min(dayWindow(now - usageDays * DAY_MS), monthWindow(now));
       deletedUsage = Number(db.prepare('DELETE FROM usage WHERE window_start < ?')
-        .run(dayWindow(now - usageDays * DAY_MS)).changes);
+        .run(cutoff).changes);
     }
     if (deletedTelemetry || deletedUsage) {
       logger?.info('retention prune', { deletedTelemetry, deletedUsage });

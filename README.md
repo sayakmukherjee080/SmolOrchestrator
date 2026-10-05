@@ -161,7 +161,7 @@ Login at `/admin` to:
 *   Generate **Gateway Keys**, scope them to models, and set request/spend budgets.
 *   Watch **Usage** — requests, tokens, cached-token savings, response-cache hit rate, and p50/p95 latency.
 *   Read **Logs** — attempt-level telemetry with zero content capture.
-*   Tune **Settings** — routing/probes, gateway limits (attempts, timeouts, key policy, body caps), security (proxy trust, rate limits, login lockout, session TTL, metrics token), cache caps, retention, budgets, backups, and config transfer. Runtime knobs apply instantly; timer intervals are labelled "restart".
+*   Tune **Settings** — routing/probes, gateway limits (attempts, timeouts, key policy, body caps), security (proxy trust, rate limits, login lockout, session TTL, metrics token, **password rotation**), cache caps, retention, budgets, backups, and config transfer. Runtime knobs apply instantly; timer intervals are labelled "restart".
 
 ---
 
@@ -171,9 +171,24 @@ Login at `/admin` to:
 *   `GET /health/ready` — readiness (database reachable).
 *   `GET /metrics` — Prometheus text metrics; set `METRICS_TOKEN` to require a bearer token.
 *   Backups are plain SQLite snapshots (`BACKUP_*` settings) created on schedule or on demand.
-*   Retention maintenance prunes telemetry and usage on schedule (`TELEMETRY_RETENTION_DAYS`, `USAGE_RETENTION_DAYS`; `0` = keep forever). Audit rows are never pruned.
-*   Behind a reverse proxy or tunnel set `TRUST_PROXY=true` so rate limiting and login lockouts key off `CF-Connecting-IP` / `X-Forwarded-For`.
+*   Retention maintenance prunes telemetry and usage on schedule (`TELEMETRY_RETENTION_DAYS`,
+    `USAGE_RETENTION_DAYS`; `0` keeps telemetry forever, usage is floored at 32 days so the current
+    month always survives). Audit rows are never pruned.
+*   Behind a reverse proxy or tunnel set `TRUST_PROXY=true` so rate limiting and login lockouts key
+    off `CF-Connecting-IP` / `X-Forwarded-For`.
 *   Every configuration variable is documented in [`.env.example`](.env.example).
+
+### Restoring a backup
+
+1. Stop the gateway (Ctrl+C in its terminal, or kill the listener on the port).
+2. Copy the snapshot over the live database and remove any sidecar journal files:
+   ```bash
+   cp storage/backups/gateway-YYYYMMDDHHMMSS.db storage/gateway.db
+   rm -f storage/gateway.db-wal storage/gateway.db-shm
+   ```
+3. Start the gateway again: `npm start`.
+
+For partial migrations between boxes, prefer the config export/import cards in the dashboard.
 
 ---
 

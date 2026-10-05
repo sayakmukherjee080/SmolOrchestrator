@@ -32,6 +32,19 @@ test('retention prunes telemetry and usage but never audit rows', async (t) => {
   assert.ok(route.id > 0);
 });
 
+test('current-month usage rows are never pruned', async (t) => {
+  const app = await createTestApp();
+  await t.after(() => app.close());
+
+  const now = Date.now();
+  const currentWindow = Math.floor(now / 86400000) * 86400000;
+  app.db.prepare("INSERT INTO usage (entity, entity_id, window_start, requests) VALUES ('model', 1, ?, 1)").run(currentWindow);
+  app.app.registry.setSetting('usage_retention_days', 1);
+  const result = app.app.maintenance.run();
+  assert.equal(result.deletedUsage, 0, 'current month survives even with a tiny retention window');
+  assert.equal(app.db.prepare('SELECT COUNT(*) AS c FROM usage').get().c, 1);
+});
+
 test('failed telemetry flush restores dirty route state', async (t) => {
   const app = await createTestApp();
   const provider = app.addProvider('stub', 'http://127.0.0.1:1/v1');

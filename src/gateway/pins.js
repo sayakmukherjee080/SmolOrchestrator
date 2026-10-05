@@ -48,7 +48,7 @@ export function resolvePin({ registry, model, token, pins, now, requirements }) 
   }
   const key = registry.keyById(pin.keyId);
   if (key && key.providerId === route.providerId && key.enabled && key.disabledUntil <= now) {
-    return { route, key, pinned: true };
+    return { route, key };
   }
   const replacement = registry.nextProviderKey(route.providerId, now);
   if (!replacement) {
@@ -56,7 +56,7 @@ export function resolvePin({ registry, model, token, pins, now, requirements }) 
     return null;
   }
   pins.set(token.id, model.id, route.id, replacement.id);
-  return { route, key: replacement, pinned: true };
+  return { route, key: replacement };
 }
 
 // Assigns a new pin, preferring routes with the fewest pinned tokens, then the lowest daily count.
@@ -79,5 +79,5 @@ export function assignPin({ registry, model, pins, excluded, now, requirements }
       bestScore = score;
     }
   }
-  return best ? { route: best, key: bestKey, pinned: false } : null;
+  return best ? { route: best, key: bestKey } : null;
 }

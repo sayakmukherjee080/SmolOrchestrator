@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestApp } from './helpers/app.js';
-import { startStubUpstream, jsonCompletion } from './helpers/upstream.js';
+import { startStubUpstream, jsonCompletion, sseCompletion } from './helpers/upstream.js';
 
 test('generic JSON endpoints route through the same pipeline', async (t) => {
   const upstream = await startStubUpstream((req, res) => jsonCompletion(res, { content: 'completion' }));
@@ -24,6 +24,33 @@ test('generic JSON endpoints route through the same pipeline', async (t) => {
   assert.equal(response.status, 200);
   await response.text();
   assert.equal(upstream.state.requests[0].url, '/v1/completions', 'sub-path preserved upstream');
+});
+
+test('generic streaming endpoints get stream_options injection', async (t) => {
+  const upstream = await startStubUpstream((req, res, record) => {
+    if (record.body?.stream === true) return sseCompletion(res);
+    return jsonCompletion(res);
+  });
+  const app = await createTestApp();
+  const provider = app.addProvider('stub', upstream.baseUrl);
+  const model = app.app.registry.createModel({ name: 'legacy' });
+  app.app.registry.createRoute({ modelId: model.id, providerId: provider.id, upstreamModel: 'u' });
+  const { raw } = app.addToken('client', [model.id]);
+  await t.after(async () => {
+    await app.close();
+    await upstream.close();
+  });
+
+  const response = await fetch(`${app.baseUrl}/v1/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${raw}` },
+    body: JSON.stringify({ model: 'legacy', prompt: 'hello', stream: true }),
+  });
+  assert.equal(response.status, 200);
+  const text = await response.text();
+  assert.match(text, /data: \[DONE\]/);
+  const sent = upstream.state.requests[0].body;
+  assert.equal(sent.stream_options.include_usage, true, 'usage injection applies to generic paths too');
 });
 
 test('provider cached tokens are recorded with estimated savings', async (t) => {

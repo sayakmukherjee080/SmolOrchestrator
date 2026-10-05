@@ -78,7 +78,17 @@ export function createPromptReader({ input = process.stdin, output = process.std
       if (isTTY && waiters[0]) output.write(waiters[0].hidden ? '*' : char);
     }
   }
+  // Delivers any trailing line and rejects waiters when stdin ends.
+  function onEnd() {
+    if (lineBuffer) {
+      deliver(lineBuffer);
+      lineBuffer = '';
+    }
+    aborted = true;
+    for (const waiter of waiters.splice(0)) waiter.reject(new Error('Aborted'));
+  }
   input.on('data', onData);
+  input.on('end', onEnd);
 
   // Asks one question and resolves with the next line.
   function ask({ prompt, hidden = false }) {
@@ -94,6 +104,7 @@ export function createPromptReader({ input = process.stdin, output = process.std
   // Restores terminal state and releases stdin so the process can exit.
   function close() {
     input.removeListener('data', onData);
+    input.removeListener('end', onEnd);
     if (isTTY && typeof input.setRawMode === 'function') input.setRawMode(false);
     input.pause?.();
     input.unref?.();

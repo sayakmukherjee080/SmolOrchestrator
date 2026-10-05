@@ -128,6 +128,24 @@ export function createHttpServer(app, config, logger) {
   });
 }
 
+// Installs last-resort crash handlers so stray failures are logged, not silent deaths.
+// Returns a dispose function that detaches both handlers.
+export function installCrashHandlers(logger, onFatal) {
+  const onRejection = (reason) => {
+    logger.error('unhandled rejection', { error: reason instanceof Error ? reason.message : String(reason) });
+  };
+  const onException = (error) => {
+    logger.error('uncaught exception', { error: error.message, stack: error.stack });
+    onFatal?.();
+  };
+  process.on('unhandledRejection', onRejection);
+  process.on('uncaughtException', onException);
+  return () => {
+    process.removeListener('unhandledRejection', onRejection);
+    process.removeListener('uncaughtException', onException);
+  };
+}
+
 // Boots the gateway, wiring teardown to SIGTERM/SIGINT.
 async function main() {
   loadEnvFile(path.join(ROOT, '.env'));
@@ -202,6 +220,7 @@ async function main() {
   }
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+  installCrashHandlers(logger, () => shutdown('uncaughtException'));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

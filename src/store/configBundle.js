@@ -113,19 +113,27 @@ export function importBundle(registry, bundle) {
   }
 
   for (const entry of bundle.models) {
-    if (registry.modelByName(entry.name)) {
+    let model = registry.modelByName(entry.name);
+    if (!model) {
+      model = registry.createModel({
+        name: entry.name,
+        balanceStrategy: entry.balanceStrategy ?? 'round_robin',
+        cacheEnabled: entry.cacheEnabled !== false,
+      });
+      created.models += 1;
+    } else {
       skipped.models += 1;
-      continue;
     }
-    const model = registry.createModel({
-      name: entry.name,
-      balanceStrategy: entry.balanceStrategy ?? 'round_robin',
-      cacheEnabled: entry.cacheEnabled !== false,
-    });
-    created.models += 1;
+    const existingRoutes = registry.routesForModel(model.id);
     for (const route of entry.routes || []) {
       const provider = providerByName(registry, route.provider);
       if (!provider) {
+        skipped.routes += 1;
+        continue;
+      }
+      const duplicate = existingRoutes.some((item) => item.providerId === provider.id
+        && item.upstreamModel === route.upstreamModel);
+      if (duplicate) {
         skipped.routes += 1;
         continue;
       }

@@ -158,6 +158,23 @@
           }
         },
         {
+          "name": "Change password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "{{csrf}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"old-password\",\n  \"newPassword\": \"new-password-123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/session/password",
+            "description": "200 { success: true, data: { changed: true } }. Verifies the current password, rehashes the new one (min 10 chars), and invalidates every existing admin session immediately. 401 invalid_credentials on wrong current password; 422 validation_error on a short new password."
+          }
+        },
+        {
           "name": "List models",
           "request": {
             "method": "GET",
@@ -467,7 +484,7 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/settings",
-            "description": "200 { success: true, data: { settings, cacheEntries } }. All keys are optional (partial updates). Boolean: probe_enabled, health_check_enabled, response_cache_enabled, trust_proxy, cookie_secure. Numeric: backoff_base_ms, backoff_cap_ms, probe_budget_per_hour, health_check_interval_ms, response_cache_ttl_ms, response_cache_max_entries, response_cache_max_body_bytes, response_cache_max_total_bytes, cached_input_discount (0-1), budget_warn_ratio (0-1), telemetry_retention_days, usage_retention_days, max_attempts (<=64), idle_timeout_ms, key_disable_ms, key_retries_per_route, probe_max_tokens, max_body_bytes, usage_parse_max_bytes, ip_rate_limit, ip_rate_window_ms, login_max_attempts, login_lockout_ms, session_ttl_ms, telemetry_buffer_max, telemetry_flush_ms, backup_interval_ms, backup_keep, maintenance_interval_ms. Strings: probe_prompt (non-empty), metrics_token (empty allowed). Runtime keys apply immediately; timer intervals (telemetry_flush_ms, backup_interval_ms, maintenance_interval_ms) apply on next start."
+            "description": "200 { success: true, data: { settings, cacheEntries } }. All keys are optional (partial updates). Boolean: probe_enabled, health_check_enabled, response_cache_enabled, trust_proxy, cookie_secure. Numeric: backoff_base_ms, backoff_cap_ms, probe_budget_per_hour, health_check_interval_ms, response_cache_ttl_ms, response_cache_max_entries, response_cache_max_body_bytes, response_cache_max_total_bytes, cached_input_discount (0-1), budget_warn_ratio (0-1), telemetry_retention_days, usage_retention_days (min 32), max_attempts (<=64), idle_timeout_ms, key_disable_ms, key_retries_per_route, probe_max_tokens, max_body_bytes, usage_parse_max_bytes, ip_rate_limit, ip_rate_window_ms, login_max_attempts, login_lockout_ms, session_ttl_ms, telemetry_buffer_max, telemetry_flush_ms, backup_interval_ms, backup_keep, maintenance_interval_ms. Strings: probe_prompt (non-empty), metrics_token (empty allowed). Runtime keys apply immediately; timer intervals (telemetry_flush_ms, backup_interval_ms, maintenance_interval_ms) apply on next start."
           }
         },
         {

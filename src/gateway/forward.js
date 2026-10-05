@@ -165,8 +165,7 @@ export function createGateway({ registry, config, telemetry, logger, metrics, on
       );
     }
 
-    const isChat = subPath === '/chat/completions';
-    const streaming = isChat && payload.stream === true;
+    const streaming = payload.stream === true;
     if (streaming) {
       const options = (payload.stream_options && typeof payload.stream_options === 'object')
         ? payload.stream_options

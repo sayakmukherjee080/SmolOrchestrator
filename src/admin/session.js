@@ -1,4 +1,5 @@
 // Admin session management: scrypt login, signed cookies, CSRF tokens, lockout.
+import { timingSafeEqual } from 'node:crypto';
 import { hashPassword, randomTokenHex, signValue, verifyPassword, verifySignedValue } from '../util/crypto.js';
 import { envelopeError } from '../util/body.js';
 
@@ -27,10 +28,17 @@ export function createSessionManager({ registry, config, logger }) {
     return hits.length >= registry.setting('login_max_attempts', config.loginMaxAttempts);
   }
 
-  // Records a failed login attempt for an IP.
+  // Records a failed login attempt for an IP, sweeping stale entries past the cap.
   function recordFailure(ip, now) {
+    if (failures.size > 1000) {
+      const cutoff = now - registry.setting('login_lockout_ms', config.loginLockoutMs);
+      for (const [key, hits] of failures) {
+        if (hits.length === 0 || hits[hits.length - 1] <= cutoff) failures.delete(key);
+      }
+    }
     const hits = failures.get(ip) || [];
     hits.push(now);
+    if (hits.length > 100) hits.shift();
     failures.set(ip, hits);
   }
 
@@ -63,13 +71,16 @@ export function createSessionManager({ registry, config, logger }) {
     }
     const csrf = randomTokenHex(16);
     const sessionTtlMs = registry.setting('session_ttl_ms', config.sessionTtlMs);
-    const payload = Buffer.from(JSON.stringify({ sub: user.id, email: user.email, exp: now + sessionTtlMs, csrf })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      sub: user.id, email: user.email, exp: now + sessionTtlMs, csrf,
+      pwdAt: user.password_changed_at ?? 0,
+    })).toString('base64url');
     const signed = signValue(payload, config.appSecret);
     registry.queueAudit({ action: 'login', outcome: 'success', ip, actor: user.email });
     return { ok: true, cookie: cookieValue(signed, Math.floor(sessionTtlMs / 1000)), email: user.email, csrf };
   }
 
-  // Returns the verified session payload, or null.
+  // Returns the verified session payload, or null when expired or invalidated by a password change.
   function getSession(request) {
     const signed = parseCookies(request.headers.get('cookie'))[COOKIE_NAME];
     if (!signed) return null;
@@ -78,6 +89,8 @@ export function createSessionManager({ registry, config, logger }) {
     try {
       const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
       if (!data || typeof data.exp !== 'number' || data.exp < Date.now()) return null;
+      const row = registry.db.prepare('SELECT password_changed_at FROM admin ORDER BY id LIMIT 1').get();
+      if (!row || data.pwdAt !== (row.password_changed_at ?? 0)) return null;
       return data;
     } catch {
       return null;
@@ -95,7 +108,12 @@ export function createSessionManager({ registry, config, logger }) {
   function requireCsrf(request, session) {
     if (request.method === 'GET' || request.method === 'HEAD') return null;
     const token = request.headers.get('x-csrf-token');
-    if (!token || token !== session.csrf) return envelopeError('Invalid CSRF token', 'csrf_failed', 403);
+    if (!token) return envelopeError('Invalid CSRF token', 'csrf_failed', 403);
+    const provided = Buffer.from(token);
+    const expected = Buffer.from(String(session.csrf));
+    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+      return envelopeError('Invalid CSRF token', 'csrf_failed', 403);
+    }
     return null;
   }
 
