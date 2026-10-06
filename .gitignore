@@ -8,3 +8,4 @@ storage/
 .vscode/settings.json
 storage/app.db
 dev/err.log
+/temp
